@@ -6,7 +6,7 @@
 
 ```
 ./loader --debug          # el juego corre y puedes conectarte cuando quieras
-./loader --debug=pause    # el juego te espera antes de su primer método
+./loader --debug pause    # el juego te espera antes de su primer método (o --debug=pause)
 python3 tools/console.py  # en otra terminal
 ```
 
@@ -43,7 +43,7 @@ Los nombres guardados quedan en `.loader_console.json`, también para la próxim
 
 ## Reglas para debug
 
-En un fichero de reglas (`--rules=FICHERO` o `rules/{md5}.txt`):
+En un fichero de reglas (`--rules FICHERO` o `rules/{md5}.txt`):
 
 ```
 symbol g_rand  @0xc01c4           # un nombre para un lugar que el .so no exporta
@@ -58,4 +58,4 @@ Sin la consola, los cambios de los watch van al log; una regla `pause` solo avis
 
 - `--trace`: registra cada llamada a una función con hook, con sus argumentos.
 - `--callers`: muestra, como un árbol, desde dónde se llama cada método de Java.
-- `--debug`, `--debug=pause`: la consola, como arriba.
+- `--debug`, `--debug pause` (o `--debug=pause`): la consola, como arriba.

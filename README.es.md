@@ -1,12 +1,12 @@
-# arena: tamatama
+# Arena: tamatama
 
 [English](README.md) | Español
 
 **En una fase muy temprana: apenas se está empezando a desarrollar y todavía no es jugable.**
 
-Tamagotchi Classic (Android) migrado poco a poco a código nativo con arena.
+Tamagotchi Classic (Android) migrado poco a poco a código nativo con Arena.
 
-**arena** es el proyecto de migración: un loader que ejecuta el `.so` original de un juego
+**Arena** es el proyecto de migración: un loader que ejecuta el `.so` original de un juego
 de Android sin Android (en ARM, bajo QEMU en el PC) y deja sustituir sus funciones, una a una,
 por código nativo. Lo que ya está migrado corre en nativo y lo demás sigue en el `.so`, hasta
 que no quede nada de él. Es todo `src/` salvo `src/port/`, que es tamatama: el código del
@@ -46,7 +46,7 @@ fijos (`src/shared/bridge.h`):
 |---|---|---|
 | 3 | loader → loader-arm | pipe de órdenes `TO_ARM_*`: llamar a un método por nombre o por dirección, pedir un símbolo, reservar memoria, el resultado de una native, salir |
 | 4 | loader-arm → loader | pipe de respuestas (`TO_HOST_RETURN`) y de llamadas a natives (`TO_HOST_NATIVE_CALL`) |
-| 5 | los dos | la arena: un memfd que los dos proyectan; los datos (objetos, vértices, el stack) se leen ahí sin copiarlos |
+| 5 | los dos | la arena: un memfd que los dos mapean; los datos (objetos, vértices, el stack) se leen ahí sin copiarlos |
 
 Por los pipes solo viajan palabras de 32 bits: `[operación, bytes]` y después los datos. El
 primer mensaje de loader-arm es `HELLO` (sus bytes forman "OKOK") con la dirección de la arena,
@@ -109,7 +109,7 @@ falta por sus recursos. `./loader --help` muestra todas las opciones.
 
 ## Reglas
 
-`--rules=FICHERO` carga un fichero de reglas, relativo al directorio actual. Sin él, si existe
+`--rules FICHERO` (o `--rules=FICHERO`) carga un fichero de reglas, relativo al directorio actual. Sin él, si existe
 `rules/{md5}.txt` junto al programa, se carga el de esa versión.
 
 ## Debug

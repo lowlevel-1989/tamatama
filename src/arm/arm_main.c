@@ -159,31 +159,38 @@ static void run(void *arg) {
    hay un loader. --load-only, --trace, --callers, --debug y --help son las del
    programa. */
 int main(int argc, char **argv) {
-    int i = 1;
-    for (; i < argc && argv[i][0] == '-' && argv[i][1] == '-'; i++) {
-        if (!strcmp(argv[i], "--probe")) _exit(42);
+    const char *game = NULL;
+    /* Las opciones pueden ir en cualquier posición. El primer argumento que no es una opción es
+       el juego; los demás se ignoran. */
+    for (int i = 1; i < argc; i++) {
+        if (strncmp(argv[i], "--", 2)) {
+            if (!game) game = argv[i];
+            continue;
+        }
+        const char *rules = option_rules(argc, argv, &i);
+        int debug_option = rules ? 0 : option_debug(argc, argv, &i);
+        if (rules) rules_path = rules;
+        else if (debug_option) debug_mode = debug_option;
+        else if (!strcmp(argv[i], "--probe")) _exit(42);
         else if (!strcmp(argv[i], "--serve")) has_host = 1;
         else if (!strcmp(argv[i], "--load-only")) load_only = 1;
         else if (!strcmp(argv[i], "--trace")) trace = 1;
         else if (!strcmp(argv[i], "--callers")) callers_enable();
-        else if (!strcmp(argv[i], "--debug")) debug_mode = 1;
-        else if (!strcmp(argv[i], "--debug=pause")) debug_mode = 2;
-        else if (!strncmp(argv[i], "--rules=", 8)) rules_path = argv[i] + 8;
         else if (!strcmp(argv[i], "--help")) {
             usage("loader-arm", "  --load-only    stop after JNI_OnLoad and print the report\n"
                                 "  --trace        log every call to a hooked function\n"
                                 "  --callers      show where each Java method is called from\n"
                                 "  --debug        open the debug console (connect with tools/console.py)\n"
-                                "  --debug=pause  the same, and wait for the console before the first method\n"
+                                "  --debug pause  the same, and wait for the console before the first method\n"
+                                "                 (also --debug=pause)\n"
                                 "  --probe, --serve  used by loader, not by hand\n",
                   "");
             return 0;
         }
     }
-    /* Sin game.apk|game.so, apk_library busca el juego; si hay más argumentos, solo cuenta el
-       primero. Sin --rules=, las de la versión. Con --serve, loader ya pasa el .so y las reglas
+    /* Sin game.apk|game.so, apk_library busca el juego. Sin --rules, las de la versión. Con --serve, loader ya pasa el .so y las reglas
        resueltos, y la versión solo la necesita él. */
-    so_path = has_host ? argv[i] : apk_library(argc > i ? argv[i] : NULL);
+    so_path = has_host ? game : apk_library(game);
     if (!rules_path && !has_host) rules_path = apk_rules();
     if (!has_host) log_msg("[env] arm: game code on this CPU, native code in this process\n");
     arena_init(has_host);

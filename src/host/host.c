@@ -379,28 +379,35 @@ static void stop_qemu(void) {
  * el juego espera en el primer método a que le digas que siga.
  */
 int main(int argc, char **argv) {
-    int i = 1, debug = 0, trace = 0, callers = 0;
-    const char *rules_option = NULL;
-    for (; i < argc && !strncmp(argv[i], "--", 2); i++) {
-        if (!strcmp(argv[i], "--trace")) trace = 1;
+    int debug = 0, trace = 0, callers = 0;
+    const char *rules_option = NULL, *game = NULL;
+    /* Las opciones pueden ir en cualquier posición. El primer argumento que no es una opción es
+       el juego; los demás se ignoran. */
+    for (int i = 1; i < argc; i++) {
+        if (strncmp(argv[i], "--", 2)) {
+            if (!game) game = argv[i];
+            continue;
+        }
+        const char *rules = option_rules(argc, argv, &i);
+        int debug_option = rules ? 0 : option_debug(argc, argv, &i);
+        if (rules) rules_option = rules;
+        else if (debug_option) debug = debug_option;
+        else if (!strcmp(argv[i], "--trace")) trace = 1;
         else if (!strcmp(argv[i], "--callers")) callers = 1;
-        else if (!strcmp(argv[i], "--debug")) debug = 1;
-        else if (!strcmp(argv[i], "--debug=pause")) debug = 2;
-        else if (!strncmp(argv[i], "--rules=", 8)) rules_option = argv[i] + 8;
         else if (!strcmp(argv[i], "--help")) {
             usage("loader", "  --trace        log every call to a hooked function\n"
                             "  --callers      show where each Java method is called from\n"
                             "  --debug        open the debug console (connect with tools/console.py)\n"
-                            "  --debug=pause  the same, and wait for the console before the first method\n",
+                            "  --debug pause  the same, and wait for the console before the first method\n"
+                            "                 (also --debug=pause)\n",
                   "  LOADER_ARM_RUNNER=cpu|qemu  who runs the ARM code, instead of detecting it\n"
                   "  QEMU_ARM=path               the qemu-arm to use\n");
             return 0;
         }
     }
-    /* Sin game.apk|game.so, apk_library busca el juego. Si hay más argumentos, solo cuenta el
-       primero. También con NATIVE=1: el .so no se carga, pero la versión dice dónde están los
+    /* Sin game.apk|game.so, apk_library busca el juego. También con NATIVE=1: el .so no se carga, pero la versión dice dónde están los
        recursos y las reglas. */
-    const char *so_path = apk_library(argc > i ? argv[i] : NULL);
+    const char *so_path = apk_library(game);
 
     /* La CPU ejecuta ARM, así que loader-arm lo contiene todo: juego y código nativo. execv
        reemplaza este proceso por él, con los mismos argumentos, y no vuelve. Le llega el .apk

@@ -139,6 +139,8 @@ const char *apk_library(const char *path);
 const char *apk_resources(void); /* resources/{md5} del .apk en uso, con assets/ dentro */
 const char *apk_rules(void);     /* rules/{md5}.txt de la versión en uso si existe, o NULL */
 void usage(const char *program, const char *options, const char *environment); /* --help */
+const char *option_rules(int argc, char **argv, int *i); /* --rules FILE o --rules=FILE */
+int option_debug(int argc, char **argv, int *i);         /* --debug [pause]: 0, 1 o 2 */
 
 /* Cómo representa la JVM falsa una cadena o un array. Un jstring es un pointer a esto. */
 typedef struct JniObject {

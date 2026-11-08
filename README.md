@@ -1,12 +1,12 @@
-# arena: tamatama
+# Arena: tamatama
 
 English | [Español](README.es.md)
 
 **At a very early stage: development has barely started and it is not playable yet.**
 
-Tamagotchi Classic (Android) migrated little by little to native code with arena.
+Tamagotchi Classic (Android) migrated little by little to native code with Arena.
 
-**arena** is the migration project: a loader that runs the original `.so` of an Android game
+**Arena** is the migration project: a loader that runs the original `.so` of an Android game
 without Android (on ARM, under QEMU on a PC) and lets you replace its functions, one by one,
 with native code. What is already migrated runs natively and the rest stays in the `.so`, until
 nothing of it is left. It is all of `src/` except `src/port/`, which is tamatama: the game's
@@ -110,7 +110,7 @@ always needed for its resources. `./loader --help` shows every option.
 
 ## Rules
 
-`--rules=FILE` loads a rules file, relative to the current folder. Without it, if
+`--rules FILE` (or `--rules=FILE`) loads a rules file, relative to the current folder. Without it, if
 `rules/{md5}.txt` exists next to the program, the one for that version is loaded.
 
 ## Debugging

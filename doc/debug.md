@@ -6,7 +6,7 @@ English | [Español](debug.es.md)
 
 ```
 ./loader --debug          # the game runs, and you can connect at any time
-./loader --debug=pause    # the game waits for you before its first method
+./loader --debug pause    # the game waits for you before its first method (or --debug=pause)
 python3 tools/console.py  # in another terminal
 ```
 
@@ -43,7 +43,7 @@ Saved names are kept in `.loader_console.json`, also for the next time.
 
 ## Rules for debugging
 
-In a rules file (`--rules=FILE` or `rules/{md5}.txt`):
+In a rules file (`--rules FILE` or `rules/{md5}.txt`):
 
 ```
 symbol g_rand  @0xc01c4           # a name for a place the .so does not export
@@ -58,4 +58,4 @@ Without the console, watch changes go to the log; a `pause` rule only warns.
 
 - `--trace`: logs every call to a hooked function, with its arguments.
 - `--callers`: shows, as a tree, where each Java method is called from.
-- `--debug`, `--debug=pause`: the console, as above.
+- `--debug`, `--debug pause` (or `--debug=pause`): the console, as above.
