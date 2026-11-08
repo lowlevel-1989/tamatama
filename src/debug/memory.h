@@ -1,5 +1,5 @@
-/* debug/memory.h: leer la memoria del juego por tipo y por lugar. Lo usan watch.c y
-   debug_server.c. */
+/* debug/memory.h: leer la memoria del juego por tipo y por lugar. Lo usan
+   watch.c y debug_server.c. */
 #pragma once
 #include "debug.h"
 
@@ -11,8 +11,9 @@ int value_type_parse(const char *text, ValueType *type);
 int value_bytes(ValueType type);
 /* Escribe en text el valor que hay en esa dirección. */
 void value_format(ValueType type, arm_ptr address, char *text, size_t room);
-/* La dirección de un lugar: @0x4AD0 es una posición en el .so, #0x60805498 o 0x60805498 es una
-   dirección absoluta, y cualquier otra cosa es un símbolo. Devuelve 0 si no existe. */
+/* La dirección de un lugar: @0x4AD0 es una posición en el .so, #0x60805498 o
+   0x60805498 es una dirección absoluta, y cualquier otra cosa es un símbolo.
+   Devuelve 0 si no existe. */
 arm_ptr place_start(const char *place);
 arm_ptr place_follow(arm_ptr address, const char *place);
 arm_ptr place_resolve(const char *place);

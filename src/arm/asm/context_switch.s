@@ -23,7 +23,8 @@
 @   r1 = load
 
     .syntax unified
-    .arm                                @ modo ARM, válido desde ARMv5TE: Raspberry Pi y QEMU
+    .arm                                @ modo ARM, válido desde ARMv5TE:
+                                        @ Raspberry Pi y QEMU
     .fpu vfp                            @ para poder nombrar d8-d15
     .text
 
@@ -33,16 +34,21 @@
 context_switch:
     @ Guarda el contexto actual en save.
     stmia r0!, {r4-r11}                 @ save->r4..r11, y r0 avanza 32 bytes
-    str   sp, [r0], #4                  @ save->sp: sp por separado, en stm está desaconsejado
-    str   lr, [r0], #4                  @ save->lr: al volver a este contexto se sigue ahí
+    str   sp, [r0], #4                  @ save->sp: sp por separado, en stm está
+                                        @ desaconsejado
+    str   lr, [r0], #4                  @ save->lr: al volver a este contexto se
+                                        @ sigue ahí
     vstmia r0, {d8-d15}                 @ save->d8..d15
 
     @ Carga el otro contexto desde load.
-    ldmia r1!, {r4-r11}                 @ r4..r11 = load->r4..r11, y r1 avanza 32 bytes
-    ldr   sp, [r1], #4                  @ a partir de aquí se usa el stack del otro contexto
+    ldmia r1!, {r4-r11}                 @ r4..r11 = load->r4..r11, y r1 avanza
+                                        @ 32 bytes
+    ldr   sp, [r1], #4                  @ a partir de aquí se usa el stack del
+                                        @ otro contexto
     ldr   lr, [r1], #4                  @ lr = adónde vuelve el otro contexto
     vldmia r1, {d8-d15}                 @ d8..d15 = load->d8..d15
 
-    bx    lr                            @ sigue el otro: vuelve de su context_switch, o empieza
+    bx    lr                            @ sigue el otro: vuelve de su
+                                        @ context_switch, o empieza
 
     .section .note.GNU-stack,"",%progbits

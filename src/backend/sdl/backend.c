@@ -1,6 +1,8 @@
-/* backend/sdl/backend.c: ventana, contexto OpenGL y eventos con SDL2. Es el único fichero que incluye
-   SDL. El contexto es OpenGL 2.1 de escritorio, porque GLES1 se parece mucho a su función fija. Se
-   crea en el thread principal, que es el mismo que ejecuta las funciones nativas. */
+/* backend/sdl/backend.c: ventana, contexto OpenGL y eventos con SDL2. Es el
+   único fichero que incluye
+   SDL. El contexto es OpenGL 2.1 de escritorio, porque GLES1 se parece mucho a
+   su función fija. Se crea en el thread principal, que es el mismo que ejecuta
+   las funciones nativas. */
 #include <SDL.h>
 #include "common.h"
 #include "backend.h"

@@ -1,19 +1,21 @@
-/* host/host.c: el programa loader, de 64 bits. No carga el .so ni ejecuta ARM: decide quién lo
-   hace y ejecuta las funciones nativas.
+/* host/host.c: el programa loader, de 64 bits. No carga el .so ni ejecuta ARM:
+   decide quién lo hace y ejecuta las funciones nativas.
 
    En x86_64 hay dos procesos a la vez:
      loader      este programa: tu código y las funciones nativas, en x86_64
      loader-arm  el .so y lo que él espera de Android, en ARM bajo QEMU
 
-   Ninguno puede llamar directamente a una función del otro, así que se comunican de dos formas:
-     - Dos pipes, para las órdenes y los resultados: solo viajan números, como registers y
-       direcciones. recv_from_arm y send_to_arm las usan.
+   Ninguno puede llamar directamente a una función del otro, así que se
+   comunican de dos formas:
+     - Dos pipes, para las órdenes y los resultados: solo viajan números, como
+       registers y direcciones. recv_from_arm y send_to_arm las usan.
        Esta técnica se llama RPC.
-     - Una arena de shared memory, para los datos: los objetos, los vértices y el stack del
-       juego se leen allí directamente con to_local, sin copiarlos.
+     - Una arena de shared memory, para los datos: los objetos, los vértices y
+       el stack del juego se leen allí directamente con to_local, sin copiarlos.
 
-   Los mensajes están definidos en shared/common.h: TO_ARM_* van de aquí a loader-arm y TO_HOST_*
-   vienen de loader-arm hacia aquí. Todo va en palabras de 32 bits. */
+   Los mensajes están definidos en shared/common.h: TO_ARM_* van de aquí a
+   loader-arm y TO_HOST_* vienen de loader-arm hacia aquí. Todo va en palabras
+   de 32 bits. */
 #include <limits.h>
 #include <unistd.h>
 #include <sys/mman.h>
@@ -25,15 +27,18 @@
 #include "platform.h"
 #include "debug.h"
 
-/* La misma arena tiene dos direcciones: dónde la ve este proceso (la elige Linux) y dónde la ve
-   loader-arm (0x60000000 si estaba libre). to_local y to_arm convierten entre las dos. */
+/* La misma arena tiene dos direcciones: dónde la ve este proceso (la elige
+   Linux) y dónde la ve loader-arm (0x60000000 si estaba libre). to_local y
+   to_arm convierten entre las dos. */
 uint8_t *arena_local;
 arm_ptr arena_arm;
-/* Los pipes con loader-arm. Valen -1 si no hay .so, y entonces no hay nadie con quien hablar. */
+/* Los pipes con loader-arm. Valen -1 si no hay .so, y entonces no hay nadie con
+   quien hablar. */
 static int pipe_to_arm = -1, pipe_from_arm = -1;
 /* El proceso de QEMU. */
 static pid_t qemu_pid;
-/* El JNIEnv del juego y la base del .so, tal como los ve loader-arm. Llegan en su primer mensaje. */
+/* El JNIEnv del juego y la base del .so, tal como los ve loader-arm. Llegan en
+   su primer mensaje. */
 static arm_ptr jni_env_arm;
 static arm_ptr so_base_arm;
 /* Cuánto se ha entregado de la arena cuando no hay .so. */
@@ -47,8 +52,8 @@ static const char *loader_arm_path(void) {
     return path;
 }
 
-/* ¿Puede este sistema ejecutar programas ARM de 32 bits sin ayuda? Lo averigua probando: lanza
-   loader-arm --probe, que termina con el código 42. */
+/* ¿Puede este sistema ejecutar programas ARM de 32 bits sin ayuda? Lo averigua
+   probando: lanza loader-arm --probe, que termina con el código 42. */
 static int can_run_arm32(void) {
     pid_t child = fork();
     if (child == 0) {
@@ -60,8 +65,8 @@ static int can_run_arm32(void) {
     waitpid(child, &status, 0);
     return WIFEXITED(status) && WEXITSTATUS(status) == 42;
 }
-/* Decide quién ejecuta el ARM. Combina lo fijado al compilar con lo que dice el kernel, y la
-   variable LOADER_ARM_RUNNER permite forzar la decisión. */
+/* Decide quién ejecuta el ARM. Combina lo fijado al compilar con lo que dice el
+   kernel, y la variable LOADER_ARM_RUNNER permite forzar la decisión. */
 static ArmRunner choose_arm_runner(void) {
     Environment environment = build_environment();
     struct utsname system_info;
@@ -69,7 +74,8 @@ static ArmRunner choose_arm_runner(void) {
     log_msg("[env] built for %s, kernel %s\n", environment_name(environment), system_info.machine);
     const char *forced = getenv("LOADER_ARM_RUNNER");
     if (forced) return !strcmp(forced, "cpu") ? ARM_ON_CPU : ARM_ON_QEMU;
-    if (environment == ENV_X86_64) return ARM_ON_QEMU; /* una CPU x86_64 no puede ejecutar ARM */
+    /* una CPU x86_64 no puede ejecutar ARM */
+    if (environment == ENV_X86_64) return ARM_ON_QEMU;
     if (environment == ENV_ARM64 && can_run_arm32()) return ARM_ON_CPU;
     return ARM_ON_QEMU; /* aarch64 sin soporte de 32 bits */
 }
@@ -136,6 +142,16 @@ static uint64_t wait_for_arm_result(void) {
             return result[0] | ((uint64_t)result[1] << 32);
         }
 
+        /* Punto seguro al final del turno de un thread: watch, pausas y
+           consola, como al volver un call_method. Mientras tanto loader-arm
+           espera, y puede atender lo que pida la consola. */
+        if (tag == TO_HOST_SAFE_POINT) {
+            debug_after_call("thread");
+            uint32_t done[4] = {TO_ARM_NATIVE_DONE, 8, 0, 0};
+            send_to_arm(done, sizeof done);
+            continue;
+        }
+
         // llama a una funcion nativa
         uint32_t call[6]; /* posición en native_table, r0, r1, r2, r3, sp */
         recv_from_arm(call, sizeof call);
@@ -182,7 +198,7 @@ uint64_t call_arm_at(arm_ptr target, const uint32_t *words, int n) {
     return wait_for_arm_result();
 }
 
-/* Ejecuta en ARM un método, por su nombre. Sin .so no hay nadie que lo ejecute, 
+/* Ejecuta en ARM un método, por su nombre. Sin .so no hay nadie que lo ejecute,
  * así que es un método que aún hay que migrar.
  * 
  * Mensaje: TO_ARM_CALL_NAME, bytes, nombre con su 0 y relleno hasta un 
@@ -214,13 +230,15 @@ static arm_ptr ask_arm_by_name(uint32_t operation, const char *name) {
     return (arm_ptr)wait_for_arm_result();
 }
 
-/* La dirección que usan la PLT y las vtables para ese símbolo. 0 si no existe. */
+/* La dirección que usan la PLT y las vtables para ese símbolo. 0 si no
+   existe. */
 arm_ptr arm_symbol(const char *name) { 
   return ask_arm_by_name(TO_ARM_SYMBOL, name); 
 }
 
-/* Memoria visible desde los dos programas. Con .so, la reserva loader-arm en su heap, y así un
-   solo proceso administra la arena. Sin .so, la arena es toda de este proceso. */
+/* Memoria visible desde los dos programas. Con .so, la reserva loader-arm en su
+   heap, y así un solo proceso administra la arena. Sin .so, la arena es toda de
+   este proceso. */
 arm_ptr shared_alloc(uint32_t n) {
     if (pipe_to_arm < 0) {
         arm_ptr address = arena_arm + arena_used;
@@ -237,10 +255,11 @@ arm_ptr shared_alloc(uint32_t n) {
 arm_ptr arm_jni_env(void) { return jni_env_arm; }
 /* Dónde quedó cargado el .so. */
 arm_ptr arm_so_base(void) { return so_base_arm; }
-/* 1 si esta dirección del juego se puede leer desde aquí: debe estar dentro de la arena. */
+/* 1 si esta dirección del juego se puede leer desde aquí: debe estar dentro de
+   la arena. */
 int arm_readable(arm_ptr address) { return address - arena_arm < ARENA_BYTES; }
-/* Dónde tiene sentido buscar: desde el .so hasta lo último reservado en la arena. loader-arm deja
-   esa cuenta en la primera palabra de la arena. */
+/* Dónde tiene sentido buscar: desde el .so hasta lo último reservado en la
+   arena. loader-arm deja esa cuenta en la primera palabra de la arena. */
 void arm_memory_range(arm_ptr *start, uint32_t *bytes) {
     uint32_t used = pipe_to_arm < 0 ? arena_used : *(uint32_t *)arena_local;
     *start = so_base_arm ? so_base_arm : arena_arm;
@@ -248,8 +267,9 @@ void arm_memory_range(arm_ptr *start, uint32_t *bytes) {
 }
 
 
-/* Crea la arena y los pipes, lanza loader-arm bajo QEMU y espera a que termine de
-   inicializarse. Al volver, el .so ya está cargado y su JNI_OnLoad ya se ha ejecutado. */
+/* Crea la arena y los pipes, lanza loader-arm bajo QEMU y espera a que termine
+   de inicializarse. Al volver, el .so ya está cargado y su JNI_OnLoad ya se ha
+   ejecutado. */
 static void start_qemu(const char *so_path, const char *rules_path, int trace, int callers) {
     int to_arm_fds[2], from_arm_fds[2];
     if (pipe(to_arm_fds) || pipe(from_arm_fds)) die_errno("pipe");
@@ -272,7 +292,8 @@ static void start_qemu(const char *so_path, const char *rules_path, int trace, i
     qemu_pid = fork();
     if (qemu_pid == 0) {
         /* 
-         * El hijo pone cada descriptor en el número que espera loader-arm: 3, 4 y 5. 
+         * El hijo pone cada descriptor en el número que espera loader-arm: 3, 4
+         * y 5. 
          * Antes los copia con dup a números más altos, 
          * para no pisar ninguno de los que aún necesita. 
          * Después cierra el resto. Así, cuando este proceso cierre 
@@ -320,8 +341,8 @@ static void start_qemu(const char *so_path, const char *rules_path, int trace, i
         args[count++] = "--serve";
         if (trace) args[count++] = "--trace";
         if (callers) args[count++] = "--callers";
-        /* Las reglas, ya resueltas, van como opción: antes del .so, que es el primer argumento
-           que no empieza por --. */
+        /* Las reglas, ya resueltas, van como opción: antes del .so, que es el
+           primer argumento que no empieza por --. */
         char rules_option[PATH_MAX + 16];
         if (rules_path) {
             snprintf(rules_option, sizeof rules_option, "--rules=%s", rules_path);
@@ -381,8 +402,8 @@ static void stop_qemu(void) {
 int main(int argc, char **argv) {
     int debug = 0, trace = 0, callers = 0;
     const char *rules_option = NULL, *game = NULL;
-    /* Las opciones pueden ir en cualquier posición. El primer argumento que no es una opción es
-       el juego; los demás se ignoran. */
+    /* Las opciones pueden ir en cualquier posición. El primer argumento que no
+       es una opción es el juego; los demás se ignoran. */
     for (int i = 1; i < argc; i++) {
         if (strncmp(argv[i], "--", 2)) {
             if (!game) game = argv[i];
@@ -405,13 +426,15 @@ int main(int argc, char **argv) {
             return 0;
         }
     }
-    /* Sin game.apk|game.so, apk_library busca el juego. También con NATIVE=1: el .so no se carga, pero la versión dice dónde están los
-       recursos y las reglas. */
+    /* Sin game.apk|game.so, apk_library busca el juego. También con NATIVE=1:
+       el .so no se carga, pero la versión dice dónde están los recursos y las
+       reglas. */
     const char *so_path = apk_library(game);
 
-    /* La CPU ejecuta ARM, así que loader-arm lo contiene todo: juego y código nativo. execv
-       reemplaza este proceso por él, con los mismos argumentos, y no vuelve. Le llega el .apk
-       (o nada), no el .so, para que él también sepa qué resources/{md5} usar. */
+    /* La CPU ejecuta ARM, así que loader-arm lo contiene todo: juego y código
+       nativo. execv reemplaza este proceso por él, con los mismos argumentos, y
+       no vuelve. Le llega el .apk (o nada), no el .so, para que él también sepa
+       qué resources/{md5} usar. */
     if (!LOADER_NATIVE && choose_arm_runner() == ARM_ON_CPU) {
         log_msg("[env] game code on this CPU: handing over to loader-arm\n");
         argv[0] = (char *)loader_arm_path();
@@ -419,22 +442,25 @@ int main(int argc, char **argv) {
         die_errno("cannot run loader-arm");
     }
 
-    /* Este proceso también necesita las reglas: call_method las consulta para decidir si un
-       método va a tu versión nativa o a ARM. Sin rules.txt, las de la versión, si las hay. Se
-       buscan aquí, después del execv: en ese camino las busca loader-arm. */
+    /* Este proceso también necesita las reglas: call_method las consulta para
+       decidir si un método va a tu versión nativa o a ARM. Sin rules.txt, las
+       de la versión, si las hay. Se buscan aquí, después del execv: en ese
+       camino las busca loader-arm. */
     const char *rules_path = rules_option ? rules_option : apk_rules();
     if (rules_path) rules_load(rules_path);
 
-    /* Migración terminada (NATIVE=1): no queda código ARM. La arena pasa a ser memoria normal,
-       pero conserva las mismas direcciones del juego, así que el código nativo no tiene que
-       cambiar. 0x60000000 ya es solo un número: nada se mapea ahí. */
+    /* Migración terminada (NATIVE=1): no queda código ARM. La arena pasa a ser
+       memoria normal, pero conserva las mismas direcciones del juego, así que
+       el código nativo no tiene que cambiar. 0x60000000 ya es solo un número:
+       nada se mapea ahí. */
     int exit_code;
     if (LOADER_NATIVE) {
         log_msg("[env] built with NATIVE=1: no .so, everything is native\n");
         arena_local = mmap(NULL, ARENA_BYTES, PROT_READ | PROT_WRITE,
                            MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
         arena_arm = ARENA_ADDRESS;
-        arena_used = 8; /* para que ningún objeto reciba la dirección 0 de la arena */
+        arena_used = 8; /* para que ningún objeto reciba la dirección 0 de la
+                           arena */
         if (debug) debug_start("loader.sock", debug == 2);
         exit_code = app_main();
     } else {

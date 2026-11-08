@@ -7,7 +7,8 @@
      trace on|off                  registra cada llamada
      arm NOMBRE                    mantiene el ARM, aunque exista versión nativa
      stub NOMBRE [@0xDIR] [valor]  no ejecuta nada y devuelve valor
-     exit NOMBRE [@0xDIR]          termina el programa en cuanto la llaman, con el informe final
+     exit NOMBRE [@0xDIR]          termina el programa en cuanto la llaman, con
+                                   el informe final
      watch NOMBRE LUGAR [TIPO]     sigue una variable: lo explica debug/watch.c
      symbol NOMBRE LUGAR           un nombre para un lugar que el .so no exporta
    @0xDIR es la posición dentro del .so, para funciones sin símbolo. */
@@ -50,8 +51,9 @@ char *next_word(char *p) {
     while (*p == ' ') p++;
     return p;
 }
-/* Añade un nombre. El lugar tiene que ser una posición fija: con -> su valor cambiaría durante el
-   juego, y con otro nombre podrían apuntarse el uno al otro para siempre. */
+/* Añade un nombre. El lugar tiene que ser una posición fija: con -> su valor
+   cambiaría durante el juego, y con otro nombre podrían apuntarse el uno al
+   otro para siempre. */
 static void symbol_add(const char *name, char *place) {
     next_word(place);
     int fixed = place[0] == '@' || place[0] == '#' || (place[0] == '0' && place[1] == 'x');
@@ -67,7 +69,8 @@ const char *symbol_place(const char *name) {
         if (!strcmp(symbols[i].name, name)) return symbols[i].place;
     return 0;
 }
-/* Lee el fichero línea a línea. Los nombres apuntan dentro del buffer, que nunca se libera. */
+/* Lee el fichero línea a línea. Los nombres apuntan dentro del buffer, que
+   nunca se libera. */
 void rules_load(const char *path) {
     char *b = read_file(path);
     if (!b) die("cannot read the rules file");
@@ -117,19 +120,21 @@ int native_index(const char *n) {
         if (!strcmp(native_table[i].name, n)) return i;
     return -1;
 }
-/* Toda la decisión: implementada en nativo y no forzada a otra cosa por una regla. */
+/* Toda la decisión: implementada en nativo y no forzada a otra cosa por una
+   regla. */
 int native_active(const char *n) { return rule_find(n) ? -1 : native_index(n); }
 
-/* 1 si el juego no debe ejecutar su propio código: con una regla stub, o con versión nativa y
-   sin una regla que lo impida. */
+/* 1 si el juego no debe ejecutar su propio código: con una regla stub, o con
+   versión nativa y sin una regla que lo impida. */
 int is_hooked(const char *n) {
     const Rule *r = rule_find(n);
     return r ? r->mode != RULE_ARM : native_index(n) >= 0;
 }
 
-/* Seno y coseno con una serie de Taylor. Usar el mismo código en los dos lados garantiza los
-   mismos bits, lo que permite comparar imágenes enteras. Cámbialas por las de libm cuando ya no
-   compares con el original. reduce lleva x al intervalo de -pi a pi. */
+/* Seno y coseno con una serie de Taylor. Usar el mismo código en los dos lados
+   garantiza los mismos bits, lo que permite comparar imágenes enteras.
+   Cámbialas por las de libm cuando ya no compares con el original. reduce lleva
+   x al intervalo de -pi a pi. */
 static double reduce(double x) {
     const double two_pi = 6.283185307179586;
     int k = (int)(x / two_pi);
@@ -139,7 +144,8 @@ static double reduce(double x) {
     return x;
 }
 
-/* Serie de Taylor con 10 términos. Cada término sale del anterior, sin calcular potencias. */
+/* Serie de Taylor con 10 términos. Cada término sale del anterior, sin calcular
+   potencias. */
 double math_sin(double x) {
     x = reduce(x);
     double t = x, r = x;

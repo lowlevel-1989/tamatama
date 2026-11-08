@@ -1,11 +1,12 @@
-/* arm/hooks.c: el punto por el que pasa toda función con hook. Solo se compila en loader-arm. */
+/* arm/hooks.c: el punto por el que pasa toda función con hook. Solo se compila
+   en loader-arm. */
 #include "arm.h"
 #include "bridge.h"
 #include "debug.h"
 
-/* El código y los datos van en mappings separados. Si el contador compartiera página con
-   las instrucciones, cada llamada obligaría a QEMU a tirar su traducción de esa página y
-   rehacerla. */
+/* El código y los datos van en mappings separados. Si el contador compartiera
+   página con las instrucciones, cada llamada obligaría a QEMU a tirar su
+   traducción de esa página y rehacerla. */
 typedef struct HookThunk {
     uint32_t code[2]; /* ldr ip, [pc, #0] ; ldr pc, [pc, #0] */
     uint32_t literal[2];  /* el Hook de este código ; hook_common */
@@ -20,8 +21,8 @@ struct Hook {
     int native;        /* posición en native_table, o -1 */
     int unimplemented; /* 1: es un stub solo porque nadie lo ha escrito aún */
 };
-/* Lo que puede hacer un hook: saltar a nuestra implementación, devolver un valor o ir a una
-   función nativa. */
+/* Lo que puede hacer un hook: saltar a nuestra implementación, devolver un
+   valor o ir a una función nativa. */
 enum { DO_TARGET, DO_STUB, DO_NATIVE, DO_EXIT };
 /* 4096 hooks: 64 KiB de código y 128 KiB de datos. */
 #define MAX_HOOKS 4096
@@ -32,9 +33,9 @@ static int hook_count;
 int has_host; /* 1: las funciones nativas están en otro proceso (x86_64) */
 /* Está en asm/hook_common.s. */
 extern void hook_common(void);
-/* Crea, o reutiliza, la entrada de un nombre y decide qué hace. La primera vez reserva las dos
-   zonas: el código en HOOK_CODE_ADDRESS y los datos en HOOK_DATA_ADDRESS. El hook número k
-   queda en HOOK_CODE_ADDRESS + 16 k. */
+/* Crea, o reutiliza, la entrada de un nombre y decide qué hace. La primera vez
+   reserva las dos zonas: el código en HOOK_CODE_ADDRESS y los datos en
+   HOOK_DATA_ADDRESS. El hook número k queda en HOOK_CODE_ADDRESS + 16 k. */
 static Hook *hook_entry(const char *name, void *target) {
     if (!hooks) {
         hook_thunks = map_at(HOOK_CODE_ADDRESS, sizeof(HookThunk) * MAX_HOOKS, 7);
@@ -57,7 +58,8 @@ static Hook *hook_entry(const char *name, void *target) {
     hook->target = target;
     hook->native = native_active(name);
     const Rule *r = rule_find(name);
-    /* La decisión: una regla stub, después tu función nativa y después nuestra implementación.
+    /* La decisión: una regla stub, después tu función nativa y después nuestra
+       implementación.
        Sin nada de eso, es un stub por defecto. */
 
     /*
@@ -83,7 +85,8 @@ static Hook *hook_entry(const char *name, void *target) {
     return hook;
 }
 
-/* El código de un hook para una importación. target es nuestra implementación, o NULL. */
+/* El código de un hook para una importación. target es nuestra implementación,
+   o NULL. */
 void *hook_with_target(const char *name, void *target) { return hook_entry(name, target)->thunk; }
 /* El código de un hook para una función del propio .so. */
 void *hook_without_target(const char *name) { return hook_entry(name, 0)->thunk; }
@@ -94,7 +97,8 @@ void *resolve_import(const char *name) {
     const void *implementation = bionic_find(name, &is_data);
     return is_data ? (void *)implementation : hook_with_target(name, (void *)implementation);
 }
-/* Ejecuta una función nativa, esté donde esté. r contiene r0 r1 r2 r3 y recibe el resultado. */
+/* Ejecuta una función nativa, esté donde esté. r contiene r0 r1 r2 r3 y recibe
+   el resultado. */
 void run_native(int index, uint32_t *r, uint32_t sp) {
     if (has_host) {
         /* x86_64: la función está en el otro proceso. */
@@ -110,9 +114,10 @@ void run_native(int index, uint32_t *r, uint32_t sp) {
         r[1] = regs.r[1];
     }
 }
-/* Escribe los argumentos de una llamada: con sus nombres, si están en android_emu/known_args.c, o los
-   cuatro registers, si no. Los que no caben en r0-r3 están en el stack, justo encima de lo
-   guardado: regs[4] y regs[5] son r4 y lr, así que el quinto argumento es regs[6]. */
+/* Escribe los argumentos de una llamada: con sus nombres, si están en
+   android_emu/known_args.c, o los cuatro registers, si no. Los que no caben en
+   r0-r3 están en el stack, justo encima de lo guardado: regs[4] y regs[5] son
+   r4 y lr, así que el quinto argumento es regs[6]. */
 static void format_args(const Hook *hook, const uint32_t *regs, char *text, size_t room) {
     const char *const *names = known_args(hook->name);
     if (!names) {
@@ -129,8 +134,8 @@ static void format_args(const Hook *hook, const uint32_t *regs, char *text, size
                                      i < 4 ? regs[i] : regs[i + 2]);
     }
 }
-/* La llama hook_common. regs = r0 r1 r2 r3 r4 lr, guardados en el stack. Devuelve adónde hay que
-   seguir, o 0 si la llamada ya está resuelta. */
+/* La llama hook_common. regs = r0 r1 r2 r3 r4 lr, guardados en el stack.
+   Devuelve adónde hay que seguir, o 0 si la llamada ya está resuelta. */
 void *dispatch(Hook *hook, uint32_t *regs) {
     hook->calls++;
     if (trace_enabled() || hook->mode == DO_EXIT || (hook->mode == DO_STUB && hook->calls == 1)) {
@@ -145,7 +150,8 @@ void *dispatch(Hook *hook, uint32_t *regs) {
                                        : "trace",
                 hook->name, text, from);
     }
-    uint32_t sp = (uint32_t)regs + 24; /* justo encima de lo guardado: los argumentos del stack */
+    uint32_t sp = (uint32_t)regs + 24; /* justo encima de lo guardado: los
+                                          argumentos del stack */
     switch (hook->mode) {
     case DO_NATIVE: run_native(hook->native, regs, sp); return 0;
     case DO_STUB:
@@ -170,4 +176,5 @@ void hooks_report(void) {
                     : hook->mode == DO_STUB   ? "  (stub)"
                                            : "");
         }
+    java_report(); /* los métodos de Java sin native, en android_emu/jvm.c */
 }

@@ -1,11 +1,13 @@
 #!/usr/bin/env python3
-"""tools/console.py: consola cómoda para el debug de loader. Solo usa la library estándar.
+"""tools/console.py: consola cómoda para el debug de loader. Solo usa la library
+estándar.
 
 Terminal 1:  ./loader --debug tu.so
 Terminal 2:  python3 tools/console.py
 
-Habla con resources/loader.sock (lo crea loader en su data_dir) usando los comandos de texto de src/debug/debug_server.c, y añade
-autocompletado con Tab, historial, ayuda por comando, atajos, coincidencias numeradas y nombres
+Habla con resources/loader.sock (lo crea loader en su data_dir) usando los
+comandos de texto de src/debug/debug_server.c, y añade autocompletado con Tab,
+historial, ayuda por comando, atajos, coincidencias numeradas y nombres
 guardados. Escribe help para empezar.
 """
 import argparse
@@ -136,7 +138,8 @@ class Console:
         threading.Thread(target=self.read_loop, daemon=True).start()
 
     def read_loop(self):
-        """Los avisos pueden llegar en cualquier momento. Lo demás es la respuesta a un comando."""
+        """Los avisos pueden llegar en cualquier momento. Lo demás es la
+        respuesta a un comando."""
         for line in self.file:
             line = line.rstrip("\n")
             if line.startswith("[watch]"):
@@ -149,7 +152,8 @@ class Console:
                 self.lines.put(line)
         self.closed = True
         self.lines.put(None)
-        # Si la consola está esperando lo que escribes, nadie más puede avisar de esto.
+        # Si la consola está esperando lo que escribes, nadie más puede avisar
+        # de esto.
         if not self.asking and not self.one_shot:
             sys.stdout.write("\r\033[KThe game has finished.\n")
             sys.stdout.flush()
@@ -157,7 +161,8 @@ class Console:
             os._exit(0)
 
     def ask(self, command):
-        """Envía un comando y devuelve su respuesta. Termina con ok, error o bye."""
+        """Envía un comando y devuelve su respuesta. Termina con ok, error o
+        bye."""
         if self.closed:
             return ["error: the game has finished"]
         self.asking = True
@@ -196,8 +201,9 @@ class Console:
             json.dump(self.names, f, indent=2)
 
     def place_of(self, token):
-        """Traduce #1 o un nombre guardado, también con +8 o ->8 detrás. Devuelve el lugar y su tipo, si se
-        sabe. Con algo detrás ya es otra variable, así que el tipo deja de valer."""
+        """Traduce #1 o un nombre guardado, también con +8 o ->8 detrás.
+        Devuelve el lugar y su tipo, si se sabe. Con algo detrás ya es otra
+        variable, así que el tipo deja de valer."""
         head, path = re.fullmatch(r"([^+-]*)(.*)", token).groups()
         match = re.fullmatch(r"#(\d+)", head)
         if match:
@@ -368,7 +374,8 @@ class Console:
         return bool(readline) and "libedit" not in (readline.__doc__ or "")
 
     def input_started(self):
-        """Hasta este momento, readline aún conserva la línea anterior: no hay que volver a mostrarla."""
+        """Hasta este momento, readline aún conserva la línea anterior: no hay
+        que volver a mostrarla."""
         self.at_prompt = True
 
     def update_prompt(self):
@@ -381,7 +388,8 @@ class Console:
             return
         readline.set_completer(self.complete)
         readline.set_completer_delims(" ")
-        # Python puede venir linkado con GNU readline, como en Fedora, o con libedit.
+        # Python puede venir linkado con GNU readline, como en Fedora, o con
+        # libedit.
         if "libedit" in (readline.__doc__ or ""):
             readline.parse_and_bind("bind ^I rl_complete")
         else:

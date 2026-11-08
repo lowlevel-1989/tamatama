@@ -1,9 +1,10 @@
-/* debug/console_default.c: lo que el programa usa de la consola de debug, para cuando se
-   compila sin ella (make DEBUG_CONSOLE=0), por ejemplo en una plataforma sin sockets Unix. Son
-   definiciones débiles: si debug_server.c está compilado, el linker elige las suyas.
+/* debug/console_default.c: lo que el programa usa de la consola de debug, para
+   cuando se compila sin ella (make DEBUG_CONSOLE=0), por ejemplo en una
+   plataforma sin sockets Unix. Son definiciones débiles: si debug_server.c está
+   compilado, el linker elige las suyas.
 
-   Sin consola, el seguimiento de variables (watch.c) sigue funcionando y sus cambios salen por
-   el log. --debug y la regla pause avisan y no hacen nada. */
+   Sin consola, el seguimiento de variables (watch.c) sigue funcionando y sus
+   cambios salen por el log. --debug y la regla pause avisan y no hacen nada. */
 #include "debug.h"
 
 /* Avisa una vez de que este build no tiene consola. */

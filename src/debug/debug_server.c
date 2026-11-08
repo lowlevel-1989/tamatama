@@ -1,14 +1,16 @@
-/* debug/debug_server.c: una consola de debug por socket. Con la opción --debug, el programa
-   abre loader.sock en data_dir() (en Linux, resources/ junto al programa) y atiende comandos de
-   texto, como la búsqueda de memoria de un emulador:
+/* debug/debug_server.c: una consola de debug por socket. Con la opción --debug,
+   el programa abre loader.sock en data_dir() (en Linux, resources/ junto al
+   programa) y atiende comandos de texto, como la búsqueda de memoria de un
+   emulador:
      nc -U resources/loader.sock
 
-   Los comandos se atienden al volver de cada call_method, en el mismo thread. Así no hace falta
-   ningún lock, el código ARM está parado mientras se lee su memoria y se puede preguntar a
-   loader-arm. A cambio, si el juego se queda bloqueado dentro de un método, la consola no responde
-   hasta que vuelva.
+   Los comandos se atienden al volver de cada call_method, en el mismo thread.
+   Así no hace falta ningún lock, el código ARM está parado mientras se lee su
+   memoria y se puede preguntar a loader-arm. A cambio, si el juego se queda
+   bloqueado dentro de un método, la consola no responde hasta que vuelva.
 
-   La memoria se lee directamente de la arena: desde el .so hasta lo último que se ha reservado.
+   La memoria se lee directamente de la arena: desde el .so hasta lo último que
+   se ha reservado.
    Quedan fuera el stack y, sin loader, lo que reserve la libc. */
 #include <errno.h>
 #include <poll.h>
@@ -37,7 +39,8 @@ static const char *last_method; /* el último método que ha vuelto */
 static const char *pause_methods[MAX_PAUSES];
 static int pause_count;
 
-/* Una coincidencia de la búsqueda: dónde está y qué valor tenía la última vez. */
+/* Una coincidencia de la búsqueda: dónde está y qué valor tenía la última
+   vez. */
 typedef struct {
     arm_ptr address;
     uint32_t raw;
@@ -88,7 +91,8 @@ static uint32_t read_raw(arm_ptr address, int bytes) {
     memcpy(&raw, to_local(address), (size_t)bytes);
     return raw;
 }
-/* Interpreta unos bits según el tipo. double representa exactamente cualquier valor de 32 bits. */
+/* Interpreta unos bits según el tipo. double representa exactamente cualquier
+   valor de 32 bits. */
 static double raw_number(ValueType type, uint32_t raw) {
     switch (type) {
     case TYPE_I8: return (int8_t)raw;
@@ -98,7 +102,8 @@ static double raw_number(ValueType type, uint32_t raw) {
     default: return raw;
     }
 }
-/* Un float escrito a mano casi nunca coincide bit a bit, así que se admite una pequeña diferencia. */
+/* Un float escrito a mano casi nunca coincide bit a bit, así que se admite una
+   pequeña diferencia. */
 static int same_number(ValueType type, double a, double b) {
     if (type != TYPE_F32) return a == b;
     double difference = a - b;
@@ -117,7 +122,8 @@ static void show_hits(size_t limit) {
     }
     if (hit_count > limit) debug_send("... %zu more\n", hit_count - limit);
 }
-/* find TIPO VALOR: empieza una búsqueda nueva. Con any guarda todo, para un valor que no conoces. */
+/* find TIPO VALOR: empieza una búsqueda nueva. Con any guarda todo, para un
+   valor que no conoces. */
 static void command_find(const char *type_name, const char *value) {
     ValueType type;
     if (!value_type_parse(type_name, &type) || !searchable(type) || !*value) {
@@ -154,7 +160,8 @@ static void command_find(const char *type_name, const char *value) {
     debug_send("%zu hits in %u bytes\n", hit_count, range);
     if (hit_count <= 20) show_hits(20);
 }
-/* next VALOR | changed | same | up | down: se queda con las coincidencias que cumplan esto. */
+/* next VALOR | changed | same | up | down: se queda con las coincidencias que
+   cumplan esto. */
 static void command_next(const char *condition) {
     if (!hits) {
         fail("error: use find first\n");
@@ -254,7 +261,8 @@ static void command_info(void) {
     for (int i = 0; i < pause_count; i++) debug_send("pause after %s\n", pause_methods[i]);
     debug_send("%s\n", paused ? "paused" : "running");
 }
-/* Pausa cada vez que vuelva este método. Vale su nombre completo o su parte final:
+/* Pausa cada vez que vuelva este método. Vale su nombre completo o su parte
+   final:
    com/juego/Natives.OnClose(I)I, Natives.OnClose(I)I u OnClose. */
 void debug_pause_at(const char *method) {
     if (pause_count == MAX_PAUSES) {
@@ -306,8 +314,8 @@ static void command_help(void) {
                "PLACE: @0x4AD0 in the .so, 0x60805498 absolute, or a symbol, then +OFFSET or ->OFFSET\n"
                "TYPE: i8 u8 i16 u16 i32 u32 f32 ptr str (i32 by default)\n");
 }
-/* Ejecuta una línea. Cada respuesta termina con una línea ok o error, para poder usarla desde un
-   programa. */
+/* Ejecuta una línea. Cada respuesta termina con una línea ok o error, para
+   poder usarla desde un programa. */
 static void run_command(char *text) {
     char *argument = next_word(text);
     if (!*text) return;
@@ -378,10 +386,12 @@ static void read_client(void) {
     }
     if (client_fd < 0) return;
     line_bytes = strlen(start);
-    if (line_bytes == sizeof line - 1) line_bytes = 0; /* una línea demasiado larga se descarta */
+    /* una línea demasiado larga se descarta */
+    if (line_bytes == sizeof line - 1) line_bytes = 0;
     else memmove(line, start, line_bytes);
 }
-/* Atiende lo que haya pendiente. Con wait = 1 se bloquea hasta que llegue algo. */
+/* Atiende lo que haya pendiente. Con wait = 1 se bloquea hasta que llegue
+   algo. */
 static void service(int wait) {
     struct pollfd fds[1];
     fds[0].fd = client_fd >= 0 ? client_fd : listen_fd;
@@ -405,7 +415,8 @@ static void debug_poll(void) {
     do service(paused);
     while (paused);
 }
-/* Si alguien pidió parar en este método, avisa y lo deja preparado para que se pare. */
+/* Si alguien pidió parar en este método, avisa y lo deja preparado para que se
+   pare. */
 static void check_pause(const char *method) {
     static int warned;
     last_method = method;
@@ -423,8 +434,9 @@ void debug_after_call(const char *method) {
     check_pause(method);
     debug_poll();
 }
-/* Al volver de una función nativa llamada por el juego, como un método Java de tu port. El juego
-   sigue dentro de la llamada, así que no avanza hasta que le digas. */
+/* Al volver de una función nativa llamada por el juego, como un método Java de
+   tu port. El juego sigue dentro de la llamada, así que no avanza hasta que le
+   digas. */
 void debug_after_native(const char *method) {
     check_pause(method);
     if (!paused) return;
@@ -433,8 +445,9 @@ void debug_after_native(const char *method) {
 }
 static void remove_socket(void) { unlink(socket_path); }
 
-/* Abre el socket. Con start_paused, se para aquí, antes de ejecutar ningún método del juego, hasta que
-   le digas que siga. Ya están hechos los constructores y JNI_OnLoad. */
+/* Abre el socket. Con start_paused, se para aquí, antes de ejecutar ningún
+   método del juego, hasta que le digas que siga. Ya están hechos los
+   constructores y JNI_OnLoad. */
 void debug_start(const char *name, int start_paused) {
     static char path[sizeof ((struct sockaddr_un *)0)->sun_path];
     struct sockaddr_un address;
@@ -442,7 +455,8 @@ void debug_start(const char *name, int start_paused) {
     address.sun_family = AF_UNIX;
     if (snprintf(path, sizeof path, "%s/%s", data_dir(), name) >= (int)sizeof path)
         die("the debug socket path is too long");
-    mkdir(data_dir(), 0755); /* puede no existir aún si no se ha extraído ningún .apk */
+    mkdir(data_dir(), 0755); /* puede no existir aún si no se ha extraído ningún
+                                .apk */
     strcpy(address.sun_path, path);
     unlink(path); /* el que haya quedado de una ejecución anterior */
     listen_fd = socket(AF_UNIX, SOCK_STREAM, 0);

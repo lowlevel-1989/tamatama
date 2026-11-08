@@ -1,5 +1,5 @@
-/* debug/watch.c: sigue variables de tu juego y muestra cada cambio. No toca el .so: la memoria del
-   juego está en la arena, así que aquí se lee directamente.
+/* debug/watch.c: sigue variables de tu juego y muestra cada cambio. No toca el
+   .so: la memoria del juego está en la arena, así que aquí se lee directamente.
 
    En el fichero de reglas, o en la consola de debug:
      watch NOMBRE LUGAR [TIPO]
@@ -13,7 +13,8 @@
      +0x18         suma, sin leer nada: @0xC2D4C+0x18 es 0xC2D64 dentro del .so
      ->0x10        lee un pointer en la dirección actual y le suma 0x10
 
-   Por ejemplo, para un World *g_world con Entity *player en 0x10 e int health en 4:
+   Por ejemplo, para un World *g_world con Entity *player en 0x10 e int health
+   en 4:
      watch vida g_world->0x10->4 i32
        1. Lee g_world: un pointer al World.
        2. Suma 0x10 y lee ese pointer: el Entity.
@@ -21,7 +22,8 @@
 
    TIPO es i8, u8, i16, u16, i32, u32, f32, ptr o str. Si no se indica, i32.
 
-   Se comprueba al volver de cada call_method, y también cuando tu código llama a watch_poll. */
+   Se comprueba al volver de cada call_method, y también cuando tu código llama
+   a watch_poll. */
 #include "memory.h"
 
 #define MAX_WATCHES 64
@@ -40,7 +42,8 @@ static Watch watches[MAX_WATCHES];
 static int watch_count;
 static uint32_t poll_number;
 
-/* Añade una variable. spec es lo que va detrás del nombre, por ejemplo "g_world->0x10->4 i32".
+/* Añade una variable. spec es lo que va detrás del nombre, por ejemplo
+   "g_world->0x10->4 i32".
    Si está mal escrita, lo avisa y no la añade. */
 void watch_add(const char *name, const char *spec) {
     if (watch_count == MAX_WATCHES) {
@@ -76,9 +79,11 @@ int watch_remove(const char *name) {
         }
     return 0;
 }
-/* Sigue los pointers y devuelve la dirección final. 0 si algún paso no se puede leer. */
+/* Sigue los pointers y devuelve la dirección final. 0 si algún paso no se puede
+   leer. */
 static arm_ptr final_address(Watch *w) {
-    /* Un símbolo se pregunta aquí y no al leer las reglas: entonces el .so aún no está cargado. */
+    /* Un símbolo se pregunta aquí y no al leer las reglas: entonces el .so aún
+       no está cargado. */
     if (!w->place_address) w->place_address = place_start(w->place);
     arm_ptr address = place_follow(w->place_address, w->place);
     return arm_readable(address) ? address : 0;
@@ -97,8 +102,9 @@ void watch_list(void) {
         debug_send("%s = %s\n", watches[i].name, text);
     }
 }
-/* Compara cada variable con su último valor y muestra las que cambiaron. where dice en qué punto
-   estamos: el nombre del método, o el texto que quieras si la llamas desde tu código. */
+/* Compara cada variable con su último valor y muestra las que cambiaron. where
+   dice en qué punto estamos: el nombre del método, o el texto que quieras si la
+   llamas desde tu código. */
 void watch_poll(const char *where) {
     if (!watch_count) return;
     poll_number++;

@@ -1,6 +1,7 @@
-/* backend/gl_table.h: las funciones GL con versión nativa. Es la misma lista para todos los backends,
-   así que loader y loader-arm tienen cada función en la misma posición. Si un backend no define
-   alguna, backend/gl_defaults.c da una versión vacía. Lo incluyen varios ficheros, cada uno con su
+/* backend/gl_table.h: las funciones GL con versión nativa. Es la misma lista
+   para todos los backends, así que loader y loader-arm tienen cada función en
+   la misma posición. Si un backend no define alguna, backend/gl_defaults.c da
+   una versión vacía. Lo incluyen varios ficheros, cada uno con su
    NATIVE, así que no lleva #pragma once. Añade aquí las que use tu juego. */
 NATIVE("glEnable", native_glEnable)
 NATIVE("glEnableClientState", native_glEnableClientState)

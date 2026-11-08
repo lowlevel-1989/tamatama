@@ -1,6 +1,7 @@
-/* arm/callers.c: la opción --callers. Muestra desde dónde se llama cada método de Java, como un árbol
-   y con los nombres de las funciones. No hay stack frames que recorrer, así que busca en el stack
-   valores que parezcan direcciones de retorno: alguno puede ser un resto de una llamada anterior. */
+/* arm/callers.c: la opción --callers. Muestra desde dónde se llama cada método
+   de Java, como un árbol y con los nombres de las funciones. No hay stack
+   frames que recorrer, así que busca en el stack valores que parezcan
+   direcciones de retorno: alguno puede ser un resto de una llamada anterior. */
 #include "arm.h"
 
 #define MAX_CALLERS 64
@@ -14,8 +15,8 @@ static int previous_count;
 void callers_enable(void) { enabled = 1; }
 int callers_enabled(void) { return enabled; }
 
-/* Copia un nombre C++ sin sus tipos: _ZN15DeviceImplement5WriteEi pasa a DeviceImplement::Write. Un
-   nombre que no empiece por _Z se copia tal cual. */
+/* Copia un nombre C++ sin sus tipos: _ZN15DeviceImplement5WriteEi pasa a
+   DeviceImplement::Write. Un nombre que no empiece por _Z se copia tal cual. */
 static void demangle(const char *name, char *text, size_t room) {
     const char *p = name + 2;
     size_t used = 0;
@@ -41,7 +42,8 @@ static void demangle(const char *name, char *text, size_t room) {
     }
     if (!used) snprintf(text, room, "%s", name);
 }
-/* Escribe la función que contiene una posición del .so: "Clase::metodo+0x7a", o "?" si no hay símbolo. */
+/* Escribe la función que contiene una posición del .so: "Clase::metodo+0x7a", o
+   "?" si no hay símbolo. */
 void describe_position(uint32_t position, char *text, size_t room) {
     uint32_t start;
     const char *name = elf_function_at(position, &start);
@@ -53,14 +55,16 @@ void describe_position(uint32_t position, char *text, size_t room) {
     demangle(name, plain, sizeof plain);
     snprintf(text, room, "%s+0x%x", plain, position - start);
 }
-/* 1 si justo antes de esta dirección hay una instrucción de llamada. Una dirección de retorno
-   impar es de código Thumb, y una par, de código ARM. */
+/* 1 si justo antes de esta dirección hay una instrucción de llamada. Una
+   dirección de retorno impar es de código Thumb, y una par, de código ARM. */
 static int follows_a_call(uint32_t address) {
     if (address & 1) {
         const uint16_t *next = (const uint16_t *)(address - 1);
         uint16_t low = next[-1], high = next[-2];
-        if ((low & 0xFF80) == 0x4780) return 1;                               /* blx rN */
-        return (high & 0xF800) == 0xF000 && (low & 0xC000) == 0xC000;         /* bl o blx */
+        /* blx rN */
+        if ((low & 0xFF80) == 0x4780) return 1;
+        /* bl o blx */
+        return (high & 0xF800) == 0xF000 && (low & 0xC000) == 0xC000;
     }
     if (address & 3) return 0;
     uint32_t word = ((const uint32_t *)address)[-1];
@@ -68,9 +72,9 @@ static int follows_a_call(uint32_t address) {
            || (word & 0xFE000000) == 0xFA000000   /* blx */
            || (word & 0x0FFFFFF0) == 0x012FFF30;  /* blx rN */
 }
-/* Muestra el árbol de llamadas hasta este método de Java. stack son sus argumentos, en el stack. Las
-   16 palabras anteriores cubren la función auxiliar del jni.h, que guarda ahí su dirección de
-   retorno. */
+/* Muestra el árbol de llamadas hasta este método de Java. stack son sus
+   argumentos, en el stack. Las 16 palabras anteriores cubren la función
+   auxiliar del jni.h, que guarda ahí su dirección de retorno. */
 void print_callers(const uint32_t *stack, const char *method) {
     uint32_t found[MAX_CALLERS], chain[MAX_CALLERS];
     int count = 0;
@@ -81,7 +85,8 @@ void print_callers(const uint32_t *stack, const char *method) {
         position &= ~1u;
         if (!count || found[count - 1] != position) found[count++] = position;
     }
-    for (int i = 0; i < count; i++) chain[i] = found[count - 1 - i]; /* de fuera hacia dentro */
+    /* de fuera hacia dentro */
+    for (int i = 0; i < count; i++) chain[i] = found[count - 1 - i];
     int shared = 0;
     while (shared < count && shared < previous_count && chain[shared] == previous[shared]) shared++;
     char indent[2 * MAX_CALLERS + 1], name[128];

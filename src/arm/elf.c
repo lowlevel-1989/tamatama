@@ -1,5 +1,5 @@
-/* arm/elf.c: el ELF loader en sí. Coloca el .so en memoria y lo deja listo para ejecutarse. Solo
-   se compila en loader-arm. */
+/* arm/elf.c: el ELF loader en sí. Coloca el .so en memoria y lo deja listo para
+   ejecutarse. Solo se compila en loader-arm. */
 #include "arm.h"
 
 /* Las estructuras ELF de 32 bits, tal como aparecen en el fichero. */
@@ -43,13 +43,15 @@ enum { R_ARM_ABS32 = 2, R_ARM_GLOB_DAT = 21, R_ARM_JUMP_SLOT = 22, R_ARM_RELATIV
 
 static uint8_t *so_base;      /* dónde quedó el .so */
 static uint32_t so_bytes;     /* cuánto ocupa */
-/* La tabla .ARM.exidx: dice cómo deshacer cada función al propagar una excepción de C++. */
+/* La tabla .ARM.exidx: dice cómo deshacer cada función al propagar una
+   excepción de C++. */
 static uint32_t exidx_address, exidx_count;
 static Sym *dynsym;        /* la tabla de símbolos dinámicos (dynsym) */
 static const char *dynstr; /* sus nombres */
 static uint32_t symbol_count;      /* cuántos símbolos hay */
 static uint32_t init, init_array, init_arraysz;
-/* Busca un símbolo definido en el .so. Una entrada con shndx 0 es una importación. */
+/* Busca un símbolo definido en el .so. Una entrada con shndx 0 es una
+   importación. */
 static Sym *find_defined(const char *name) {
     for (uint32_t i = 1; i < symbol_count; i++)
         if (dynsym[i].shndx && !strcmp(dynstr + dynsym[i].name, name)) return &dynsym[i];
@@ -60,18 +62,20 @@ void *so_find(const char *name) {
     Sym *symbol = find_defined(name);
     return symbol ? so_base + symbol->value : 0;
 }
-/* La dirección que debe recibir el símbolo número idx. Aquí nace la intercepción: todo lo que
-   el .so pide fuera de sí mismo pasa por resolve_import. */
+/* La dirección que debe recibir el símbolo número idx. Aquí nace la
+   intercepción: todo lo que el .so pide fuera de sí mismo pasa por
+   resolve_import. */
 static uint32_t symbol_value(uint32_t idx) {
     Sym *symbol = &dynsym[idx];
     const char *name = dynstr + symbol->name;
     if (!symbol->shndx) return (uint32_t)resolve_import(name);
-    /* Definido en el .so. Si está sustituido, la PLT, la GOT y las vtables reciben el hook. */
+    /* Definido en el .so. Si está sustituido, la PLT, la GOT y las vtables
+       reciben el hook. */
     if (is_hooked(name)) return (uint32_t)hook_without_target(name);
     return (uint32_t)so_base + symbol->value;
 }
-/* Aplica una tabla de relocations. B es la base, A el valor que ya contiene la posición y S
-   la dirección del símbolo. */
+/* Aplica una tabla de relocations. B es la base, A el valor que ya contiene la
+   posición y S la dirección del símbolo. */
 static void relocate(Rel *r, uint32_t bytes) {
     for (uint32_t i = 0; i < bytes / sizeof(Rel); i++) {
         uint32_t *p = (uint32_t *)(so_base + r[i].offset);
@@ -87,18 +91,20 @@ static void relocate(Rel *r, uint32_t bytes) {
         }
     }
 }
-/* Bytes que ocupa el salto al inicio de una función. El bit 0 de v dice el modo: 8 en ARM, 12
-   en Thumb aligned a 4, y 14 si hace falta un nop delante. */
+/* Bytes que ocupa el salto al inicio de una función. El bit 0 de v dice el
+   modo: 8 en ARM, 12 en Thumb aligned a 4, y 14 si hace falta un nop
+   delante. */
 static uint32_t patch_size(uint32_t address) { return !(address & 1) ? 8 : (address & 2) ? 14 : 12; }
 
-/* Sobrescribe el inicio de una función con un salto a su hook. Solo usa instrucciones que
-   existen desde ARMv5T. La función original no se vuelve a ejecutar, así que no hace falta
-   guardar lo que se pisa. */
+/* Sobrescribe el inicio de una función con un salto a su hook. Solo usa
+   instrucciones que existen desde ARMv5T. La función original no se vuelve a
+   ejecutar, así que no hace falta guardar lo que se pisa. */
 static void write_patch(uint32_t address, void *target) {
     uint32_t a = address & ~1u;
     if (!(address & 1)) { /* función ARM */
         uint32_t *w = (uint32_t *)a;
-        /* ldr pc, [pc, #-4]: pc vale la instrucción + 8, así que lee la palabra siguiente */
+        /* ldr pc, [pc, #-4]: pc vale la instrucción + 8, así que lee la palabra
+           siguiente */
         w[0] = 0xE51FF004;
         w[1] = (uint32_t)target;
         return;
@@ -114,7 +120,8 @@ static void write_patch(uint32_t address, void *target) {
 static void hook_function(const char *name, uint32_t given_address) {
     Sym *symbol = find_defined(name);
     uint32_t offset = given_address ? given_address : symbol ? symbol->value : 0;
-    /* una importación o un método JNI: ya se encargan las relocations y RegisterNatives */
+    /* una importación o un método JNI: ya se encargan las relocations y
+       RegisterNatives */
     if (!offset) return;
     uint32_t address = (uint32_t)so_base + offset, needed = patch_size(address), size = symbol ? symbol->size : 0;
     if (symbol && size < needed) {
@@ -144,9 +151,9 @@ uint32_t elf_load(const char *path) {
     if (memcmp(elf_header->id, "\177ELF", 4) || elf_header->id[4] != 1) die("not a 32-bit ELF file");
     if (elf_header->machine != 40) die("not an ARM ELF file");
 
-    /* Paso 2: reserva hasta el final del segmento más alto y copia cada PT_LOAD. La base sale
-       de la arena: con el stack delante, 0x60000000 + 8 MiB = 0x60800000. El .so no depende de
-       ella. */
+    /* Paso 2: reserva hasta el final del segmento más alto y copia cada
+       PT_LOAD. La base sale de la arena: con el stack delante, 0x60000000 + 8
+       MiB = 0x60800000. El .so no depende de ella. */
     Phdr *segments = (Phdr *)(file + elf_header->phoff);
     uint32_t image_size = 0;
     for (int i = 0; i < elf_header->phnum; i++)
@@ -162,7 +169,8 @@ uint32_t elf_load(const char *path) {
         if (segments[i].type == PT_DYNAMIC) dyn = (Dyn *)(so_base + segments[i].vaddr);
         if (segments[i].type == PT_ARM_EXIDX) {
             exidx_address = (uint32_t)so_base + segments[i].vaddr;
-            exidx_count = segments[i].memsz / 8; /* cada entrada ocupa 8 bytes */
+            exidx_count = segments[i].memsz / 8; /* cada entrada ocupa 8
+                                                    bytes */
         }
     }
     log_msg("[loader] %s: base=%p, %u bytes\n", path, so_base, image_size);
@@ -187,13 +195,14 @@ uint32_t elf_load(const char *path) {
     for (Dyn *dyn_entry = dyn; dyn_entry->tag; dyn_entry++)
         if (dyn_entry->tag == DT_NEEDED) log_msg("[loader] needs %s\n", dynstr + dyn_entry->val);
 
-    /* Paso 4: reubica y pone los hooks de las funciones que ya tienen sustituta. */
+    /* Paso 4: reubica y pone los hooks de las funciones que ya tienen
+       sustituta. */
     if (rel) relocate(rel, relsz);
     if (jmp) relocate(jmp, jmpsz);
     hook_replaced_functions();
 
-    /* Paso 5: los permisos finales de cada segmento. ELF y mprotect usan los mismos tres bits,
-       en orden inverso. */
+    /* Paso 5: los permisos finales de cada segmento. ELF y mprotect usan los
+       mismos tres bits, en orden inverso. */
     flush_code(so_base, image_size);
     for (int i = 0; i < elf_header->phnum; i++)
         if (segments[i].type == PT_LOAD) {
@@ -211,8 +220,9 @@ int elf_position(uint32_t address, uint32_t *position) {
     *position = address - (uint32_t)so_base;
     return *position < so_bytes;
 }
-/* El nombre de la función que contiene esta posición, o NULL. Escribe también dónde empieza. Solo
-   conoce los símbolos dinámicos, porque .symtab no se carga en memoria. */
+/* El nombre de la función que contiene esta posición, o NULL. Escribe también
+   dónde empieza. Solo conoce los símbolos dinámicos, porque .symtab no se carga
+   en memoria. */
 const char *elf_function_at(uint32_t position, uint32_t *start) {
     const Sym *best = 0;
     for (uint32_t i = 1; i < symbol_count; i++) {
@@ -227,8 +237,8 @@ const char *elf_function_at(uint32_t position, uint32_t *start) {
     return dynstr + best->name;
 }
 /* Escribe una dirección y, si está dentro del .so, su posición y su función:
-   "0x6082d1e3 (@0x2d1e2 _JNIEnv::CallStaticIntMethod+0x16)". La posición no lleva el bit de Thumb,
-   así que coincide con el disassembly. */
+   "0x6082d1e3 (@0x2d1e2 _JNIEnv::CallStaticIntMethod+0x16)". La posición no
+   lleva el bit de Thumb, así que coincide con el disassembly. */
 void elf_format_address(uint32_t address, char *text, size_t room) {
     uint32_t position;
     if (!elf_position(address, &position)) {
@@ -240,8 +250,9 @@ void elf_format_address(uint32_t address, char *text, size_t room) {
     describe_position(position, name, sizeof name);
     snprintf(text, room, "0x%x (@0x%x %s)", address, position, name);
 }
-/* __gnu_Unwind_Find_exidx: el código de excepciones de C++ pregunta por la tabla de la library
-   que contiene esta dirección. Solo hay una library ARM: el .so. */
+/* __gnu_Unwind_Find_exidx: el código de excepciones de C++ pregunta por la
+   tabla de la library que contiene esta dirección. Solo hay una library ARM: el
+   .so. */
 void *elf_find_exidx(uint32_t pc, int *count) {
     if (!exidx_count || pc - (uint32_t)so_base >= so_bytes) {
         *count = 0;
@@ -250,8 +261,8 @@ void *elf_find_exidx(uint32_t pc, int *count) {
     *count = (int)exidx_count;
     return (void *)exidx_address;
 }
-/* Paso 6: los constructores globales de C++. Se saltan 0 y 0xFFFFFFFF, que algunas toolchains
-   usan como marcas. */
+/* Paso 6: los constructores globales de C++. Se saltan 0 y 0xFFFFFFFF, que
+   algunas toolchains usan como marcas. */
 void elf_run_constructors(void) {
     if (init) ((void (*)(void))(so_base + init))();
     for (uint32_t i = 0; i < init_arraysz / 4; i++) {

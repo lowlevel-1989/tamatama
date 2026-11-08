@@ -10,6 +10,8 @@
 /apk/
 /apks/
 /resources/
+decode.txt
+dump.txt
 
 # Lo que deja una ejecución
 *.core

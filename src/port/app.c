@@ -15,10 +15,26 @@ int app_main(void) {
     backend_init(WIDTH, HEIGHT);
 
     uint32_t init_args[4] = {env, FAKE_JCLASS, WIDTH, HEIGHT};
+
+    // Ejecuta el gameloop original
     call_method(METHOD("init"), init_args, 4);
 
     // deberia actualizar cada que cambia el tamaño de la pantalla
     reload_counter = 1;
+
+    // El loop del juego, run() (doc/code/run.c), no corre dentro de init:
+    // corre en un thread que solo avanza cuando el principal le cede el turno.
+    //   init -> OnThreadCreate -> thread creado, sin correr
+    //   vuelve init -> primer turno
+    //     -> run() hasta su primer usleep -> devuelve el turno
+    //   usleep(200 ms) del lado ARM -> el principal duerme y cede el turno
+    //     -> termina el sleep del thread -> otra vuelta de run()
+    //     -> usleep -> devuelve el turno
+    //     -> ... hasta que pasan los 200 ms -> app_main sigue
+    // Cada vuelta de run() dura unos 62 ms (controlSleep(62)): unas 16 por
+    // segundo, así que 200 ms dan al menos tres.
+    uint32_t wait[1] = {30000000};
+    call_method("usleep", wait, 1);
 
     /*
     uint32_t no_args[2] = {env, FAKE_JCLASS};

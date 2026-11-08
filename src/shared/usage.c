@@ -1,5 +1,6 @@
-/* shared/usage.c: las opciones que comparten loader y loader-arm, y el texto de --help. La parte común (el juego y las reglas) está aquí; cada
-   programa añade sus opciones y, si las tiene, sus variables de entorno. Los mensajes van en
+/* shared/usage.c: las opciones que comparten loader y loader-arm, y el texto de
+   --help. La parte común (el juego y las reglas) está aquí; cada programa añade
+   sus opciones y, si las tiene, sus variables de entorno. Los mensajes van en
    inglés, como el resto de la consola. */
 #include "common.h"
 #include "platform.h"
@@ -23,8 +24,9 @@ void usage(const char *program, const char *options, const char *environment) {
             program, apk_hint(), options, *environment ? "\nEnvironment:\n" : "", environment);
 }
 
-/* --rules FICHERO o --rules=FICHERO. Si argv[*i] es esta opción, devuelve el fichero y deja *i en
-   el último argumento que ha usado; si no, devuelve NULL. */
+/* --rules FICHERO o --rules=FICHERO. Si argv[*i] es esta opción, devuelve el
+   fichero y deja *i en el último argumento que ha usado; si no, devuelve
+   NULL. */
 const char *option_rules(int argc, char **argv, int *i) {
     if (!strncmp(argv[*i], "--rules=", 8)) return argv[*i] + 8;
     if (strcmp(argv[*i], "--rules")) return NULL;
@@ -32,8 +34,9 @@ const char *option_rules(int argc, char **argv, int *i) {
     return argv[++*i];
 }
 
-/* --debug, --debug pause o --debug=pause. Devuelve 0 si argv[*i] no es esta opción, 1 sin pausa y
-   2 con pausa. Con espacio, el argumento siguiente solo se toma si es pause: si no, es el juego. */
+/* --debug, --debug pause o --debug=pause. Devuelve 0 si argv[*i] no es esta
+   opción, 1 sin pausa y 2 con pausa. Con espacio, el argumento siguiente solo
+   se toma si es pause: si no, es el juego. */
 int option_debug(int argc, char **argv, int *i) {
     if (!strcmp(argv[*i], "--debug=pause")) return 2;
     if (strcmp(argv[*i], "--debug")) return 0;

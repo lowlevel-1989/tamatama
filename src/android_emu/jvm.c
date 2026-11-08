@@ -1,13 +1,15 @@
-/* android_emu/jvm.c: una JavaVM que no ejecuta Java. El .so solo ve una tabla de funciones y cada
-   entrada es un hook, de modo que también se puede hacer hook de toda JNI y sustituirla. */
+/* android_emu/jvm.c: una JavaVM que no ejecuta Java. El .so solo ve una tabla
+   de funciones y cada entrada es un hook, de modo que también se puede hacer
+   hook de toda JNI y sustituirla. */
 #include "arm.h"
 #include "jni_names.h"
 #include <stdarg.h>
 #define JNI_COUNT (sizeof jni_names / sizeof jni_names[0])
 
-/* JNIEnv es un pointer a un pointer a la tabla. Viven en la arena, para que el loader pueda
-   entregar la misma dirección al código nativo. Con libdemo.so, la celda queda en 0x60805000,
-   justo después del .so: es lo siguiente libre de la arena. */
+/* JNIEnv es un pointer a un pointer a la tabla. Viven en la arena, para que el
+   loader pueda entregar la misma dirección al código nativo. Con libdemo.so, la
+   celda queda en 0x60805000, justo después del .so: es lo siguiente libre de la
+   arena. */
 static void ***env_cell;
 static void ***vm_cell;
 
@@ -20,8 +22,8 @@ static JniObject *object_new(const void *p, uint32_t n) {
     o->data[n] = 0;
     return o;
 }
-/* Una clase o un método de Java no son más que su nombre. concat3 crea ese texto uniendo tres
-   trozos. */
+/* Una clase o un método de Java no son más que su nombre. concat3 crea ese
+   texto uniendo tres trozos. */
 static char *concat3(const char *a, const char *b, const char *c) {
     char *s = arena_malloc(strlen(a) + strlen(b) + strlen(c) + 1);
     strcpy(s, a);
@@ -29,7 +31,8 @@ static char *concat3(const char *a, const char *b, const char *c) {
     strcpy(s + strlen(s), c);
     return s;
 }
-/* Lo registrado con RegisterNatives: muchos juegos no exportan sus métodos como Java_... */
+/* Lo registrado con RegisterNatives: muchos juegos no exportan sus métodos como
+   Java_... */
 typedef struct {
     const char *name, *signature;
     void *fn;
@@ -43,8 +46,8 @@ void *jni_registered(const char *n) {
         if (!strcmp(methods[i].name, n)) return methods[i].fn;
     return 0;
 }
-/* Las funciones implementadas. Todo lo demás acaba en UNIMPLEMENTED y devuelve 0. ENV_ARG es el
-   primer argumento de todas: env, en r0. */
+/* Las funciones implementadas. Todo lo demás acaba en UNIMPLEMENTED y devuelve
+   0. ENV_ARG es el primer argumento de todas: env, en r0. */
 #define ENV_ARG void *env
 /* Devuelve JNI_VERSION_1_6. */
 static int jni_GetVersion(ENV_ARG) {
@@ -57,7 +60,8 @@ static void *jni_FindClass(ENV_ARG, const char *n) {
     log_msg("[jni] FindClass(%s)\n", n);
     return concat3(n, "", "");
 }
-/* Recorre los métodos que registra el juego. Los que tienen versión nativa reciben un hook. */
+/* Recorre los métodos que registra el juego. Los que tienen versión nativa
+   reciben un hook. */
 static int jni_RegisterNatives(ENV_ARG, void *k, const Method *m, int c) {
     (void)env;
     (void)k;
@@ -65,7 +69,8 @@ static int jni_RegisterNatives(ENV_ARG, void *k, const Method *m, int c) {
         Method method = m[i];
         log_msg("[jni] RegisterNatives %s %s -> %p\n", method.name, method.signature, method.fn);
         if (is_hooked(method.name)) {
-            /* Los métodos estáticos no tienen símbolo: este es el único momento para atajarlos. */
+            /* Los métodos estáticos no tienen símbolo: este es el único momento
+               para atajarlos. */
             method.fn = hook_with_target(method.name, method.fn);
         }
         methods[method_count++] = method;
@@ -77,8 +82,9 @@ static void *jni_GetMethodID(ENV_ARG, void *k, const char *n, const char *f) {
     (void)env;
     return concat3((char *)k, ".", concat3(n, "", f));
 }
-/* Muestra una llamada a un método de Java, con sus argumentos. El método es el texto
-   Clase.nombre(firma), así que la firma dice qué hay en args:
+/* Muestra una llamada a un método de Java sin native, como [UNIMPLEMENTED], con
+   sus argumentos. El método es el texto Clase.nombre(firma), así que la firma
+   dice qué hay en args:
      Ljava/lang/String;   un jstring, que se muestra como texto
      L...; y [...         otro objeto o un array, que se muestra como dirección
      J                    un long, de 64 bits
@@ -111,12 +117,15 @@ static void show_java_call(const char *method, va_list args, uint32_t caller) {
     }
     char from[160];
     elf_format_address(caller, from, sizeof from);
-    log_msg("[hook] Java -> %s%s%s  from %s\n", method, used ? "  args: " : "", text, from);
+    log_msg("[UNIMPLEMENTED] Java -> %s%s%s  from %s\n", method, used ? "  args: " : "",
+            text, from);
 }
-/* Los métodos de Java que atiende loader-arm: la lista está en port/arm_java_table.h. */
+/* Los métodos de Java que atiende loader-arm: la lista está en
+   port/arm_java_table.h. */
 static const struct {
     const char *name;
-    uint64_t (*fn)(const uint32_t *words); /* words: los argumentos del método */
+    uint64_t (*fn)(const uint32_t *words); /* words: los argumentos del
+                                              método */
 } arm_java[] = {
 #define ARM_JAVA(name, fn) {name, fn},
 #if __has_include("arm_java_table.h")
@@ -124,12 +133,40 @@ static const struct {
 #endif
 #undef ARM_JAVA
     {0, 0}};
-/* Ejecuta un método de Java. Si está en arm_java, lo atiende loader-arm. Si no, quien lo
-   implementa es src/port, con una línea en port_table.h cuyo
-   nombre es el texto del método. La función nativa lo recibe como una llamada normal: el primer
-   argumento en r0, el segundo en r1, y el resultado en r0 y r1. Sin versión nativa, muestra la
-   llamada y devuelve 0. En ARM, un va_list es un pointer a los argumentos: los cuatro primeros
-   van a los registers, y los demás se leen con stack_arg. */
+/* Ejecuta un método de Java. Si está en arm_java, lo atiende loader-arm. Si no,
+   quien lo implementa es src/port, con una línea en port_table.h cuyo
+   nombre es el texto del método. La función nativa lo recibe como una llamada
+   normal: el primer argumento en r0, el segundo en r1, y el resultado en r0 y
+   r1. Sin versión nativa, muestra la llamada y devuelve 0. En ARM, un va_list
+   es un pointer a los argumentos: los cuatro primeros van a los registers, y
+   los demás se leen con stack_arg. */
+/* Los métodos de Java que el juego ha llamado sin que tengan native, y cuántas
+   veces, para el informe final. Salen siempre, sin --trace: es lo que falta. */
+#define MAX_MISSING_JAVA 128
+static struct {
+    const char *name;
+    uint32_t calls;
+} missing_java[MAX_MISSING_JAVA];
+static int missing_java_count;
+
+static void count_missing_java(const char *method) {
+    for (int i = 0; i < missing_java_count; i++)
+        if (!strcmp(missing_java[i].name, method)) {
+            missing_java[i].calls++;
+            return;
+        }
+    if (missing_java_count == MAX_MISSING_JAVA) return;
+    missing_java[missing_java_count].name = method;
+    missing_java[missing_java_count++].calls = 1;
+}
+
+/* Su parte del informe final: lo llama hooks_report. */
+void java_report(void) {
+    for (int i = 0; i < missing_java_count; i++)
+        log_msg("[report] %u  Java:%s  (unimplemented)\n", missing_java[i].calls,
+                missing_java[i].name);
+}
+
 static uint64_t run_java_method(const char *method, va_list args, uint32_t caller) {
     const uint32_t *words = *(const uint32_t **)&args;
     if (callers_enabled()) print_callers(words, method);
@@ -137,6 +174,7 @@ static uint64_t run_java_method(const char *method, va_list args, uint32_t calle
         if (!strcmp(arm_java[i].name, method)) return arm_java[i].fn(words);
     int index = native_active(method);
     if (index < 0) {
+        count_missing_java(method);
         show_java_call(method, args, caller);
         return 0;
     }
@@ -144,8 +182,9 @@ static uint64_t run_java_method(const char *method, va_list args, uint32_t calle
     run_native(index, r, (uint32_t)(words + 4));
     return r[0] | ((uint64_t)r[1] << 32);
 }
-/* Las llamadas a métodos estáticos de Java. Devuelven 64 bits porque, en softfp, cualquier tipo
-   vuelve en r0 y r1, así que una sola función sirve para todos. */
+/* Las llamadas a métodos estáticos de Java. Devuelven 64 bits porque, en
+   softfp, cualquier tipo vuelve en r0 y r1, así que una sola función sirve para
+   todos. */
 static uint64_t jni_CallStaticMethod(ENV_ARG, void *k, void *m, ...) {
     va_list args;
     (void)env;
@@ -155,14 +194,16 @@ static uint64_t jni_CallStaticMethod(ENV_ARG, void *k, void *m, ...) {
     va_end(args);
     return result;
 }
-/* Lo mismo, con los argumentos en un va_list. Es la forma que usa el jni.h de C++. */
+/* Lo mismo, con los argumentos en un va_list. Es la forma que usa el jni.h de
+   C++. */
 static uint64_t jni_CallStaticMethodV(ENV_ARG, void *k, void *m, va_list args) {
     (void)env;
     (void)k;
     return run_java_method(m, args, (uint32_t)__builtin_return_address(0));
 }
-/* Qué función atiende un CallStatic<Tipo>Method de la tabla JNI: los terminados en Method llevan
-   ... y los terminados en MethodV llevan va_list. La forma MethodA aún no está. */
+/* Qué función atiende un CallStatic<Tipo>Method de la tabla JNI: los terminados
+   en Method llevan ... y los terminados en MethodV llevan va_list. La forma
+   MethodA aún no está. */
 static void *call_static_handler(const char *name) {
     if (strncmp(name, "CallStatic", 10)) return 0;
     char last = name[strlen(name) - 1];
@@ -310,15 +351,17 @@ void *jni_env(void) {
                 if (!strcmp(jni_impl[k].name, jni_names[i])) target = jni_impl[k].fn;
             if (!target) target = call_static_handler(jni_names[i]);
             snprintf(name, sizeof name, "JNI:%s", jni_names[i]);
-            /* El hook guarda este pointer, así que el nombre necesita su propia copia. Va en
-               la libc de este proceso porque solo lo lee hooks.c: en la arena, la búsqueda de
-               la consola lo recorrería como si fueran datos del juego. */
+            /* El hook guarda este pointer, así que el nombre necesita su propia
+               copia. Va en la libc de este proceso porque solo lo lee hooks.c:
+               en la arena, la búsqueda de la consola lo recorrería como si
+               fueran datos del juego. */
             table[i] = hook_with_target(strdup(name), target);
         }
     }
     return env_cell;
 }
-/* JavaVM funciona igual, con ocho entradas. GetEnv es la número 6, en el offset 0x18. */
+/* JavaVM funciona igual, con ocho entradas. GetEnv es la número 6, en el offset
+   0x18. */
 void *jni_vm(void) {
     static const char *const n[8] = {"VM:reserved0",
                                      "VM:reserved1",

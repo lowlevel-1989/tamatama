@@ -1,11 +1,14 @@
-/* shared/md5.c: el MD5 de un fichero (RFC 1321), sin programas ni libraries externas. Solo sirve
-   para reconocer la versión del .apk: no es para seguridad.
+/* shared/md5.c: el MD5 de un fichero (RFC 1321), sin programas ni libraries
+   externas. Solo sirve para reconocer la versión del .apk: no es para
+   seguridad.
 
-   MD5 trabaja con bloques de 64 bytes. Cada bloque se mezcla con un estado de cuatro palabras de
-   32 bits (a, b, c, d) en 64 pasos. Al final se añade un 1, ceros y la longitud en bits, para que
-   dos ficheros distintos no acaben con el mismo último bloque. Todo es little-endian. */
-/* Offsets de 64 bits en readdir y fopen también en ARM de 32 bits: si no, bajo QEMU
-   readdir falla con las carpetas de ext4 y no se abren ficheros de más de 2 GiB. */
+   MD5 trabaja con bloques de 64 bytes. Cada bloque se mezcla con un estado de
+   cuatro palabras de 32 bits (a, b, c, d) en 64 pasos. Al final se añade un 1,
+   ceros y la longitud en bits, para que dos ficheros distintos no acaben con el
+   mismo último bloque. Todo es little-endian. */
+/* Offsets de 64 bits en readdir y fopen también en ARM de 32 bits: si no, bajo
+   QEMU readdir falla con las carpetas de ext4 y no se abren ficheros de más de
+   2 GiB. */
 #define _FILE_OFFSET_BITS 64
 #include "md5.h"
 #include <stdio.h>
@@ -45,7 +48,8 @@ static void md5_block(Md5 *m, const uint8_t *p) {
     for (int i = 0; i < 64; i++) {
         uint32_t f;
         int g;
-        /* Cuatro rondas de 16 pasos: cada una con su función y su orden de palabras. */
+        /* Cuatro rondas de 16 pasos: cada una con su función y su orden de
+           palabras. */
         if (i < 16) f = (b & c) | (~b & d), g = i;
         else if (i < 32) f = (d & b) | (~d & c), g = (5 * i + 1) & 15;
         else if (i < 48) f = b ^ c ^ d, g = (3 * i + 5) & 15;
@@ -84,7 +88,8 @@ static void md5_update(Md5 *m, const uint8_t *data, size_t n) {
     }
 }
 
-/* El relleno final: un byte 0x80, ceros hasta dejar 8 bytes libres y la longitud en bits. */
+/* El relleno final: un byte 0x80, ceros hasta dejar 8 bytes libres y la
+   longitud en bits. */
 static void md5_final(Md5 *m, uint8_t digest[16]) {
     uint64_t bits = m->bytes * 8;
     uint8_t pad[72] = {0x80}, length[8];
@@ -100,7 +105,8 @@ int md5_file(const char *path, char hex[33]) {
     if (!f) return -1;
     Md5 m;
     md5_init(&m);
-    static uint8_t chunk[65536]; /* por bloques: el .apk no tiene que caber en memoria */
+    static uint8_t chunk[65536]; /* por bloques: el .apk no tiene que caber en
+                                    memoria */
     size_t got;
     while ((got = fread(chunk, 1, sizeof chunk, f)) > 0) md5_update(&m, chunk, got);
     int failed = ferror(f);

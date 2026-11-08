@@ -1,12 +1,13 @@
 #!/usr/bin/env python3
-"""tools/vtable.py: a qué puede llegar una llamada virtual: la función que hay en una posición de
-cada vtable de un .so.
+"""tools/vtable.py: a qué puede llegar una llamada virtual: la función que hay
+en una posición de cada vtable de un .so.
 
   python3 tools/vtable.py game.so 0x24
 """
-# El código compilado solo dice la posición: 0x24. Qué función es depende de la clase real del
-# objeto, así que este programa muestra esa posición en todas las clases que tienen vtable. Una
-# vtable empieza con dos palabras antes de la primera entrada, y por eso se suma 8.
+# El código compilado solo dice la posición: 0x24. Qué función es depende de la
+# clase real del objeto, así que este programa muestra esa posición en todas las
+# clases que tienen vtable. Una vtable empieza con dos palabras antes de la
+# primera entrada, y por eso se suma 8.
 import argparse
 import bisect
 import os

@@ -1,6 +1,7 @@
-/* shared/app_default.c: el programa que se usa mientras src/port no tenga el suyo. Es una
-   definición débil: si escribes app_main en src/port, el linker elige la tuya sin que haya
-   que tocar nada aquí. Con el port vacío ya se carga el .so, se ejecutan sus constructores y
+/* shared/app_default.c: el programa que se usa mientras src/port no tenga el
+   suyo. Es una definición débil: si escribes app_main en src/port, el linker
+   elige la tuya sin que haya que tocar nada aquí. Con el port vacío ya se carga
+   el .so, se ejecutan sus constructores y
    JNI_OnLoad, y el informe final muestra a qué ha llamado. */
 #include "common.h"
 

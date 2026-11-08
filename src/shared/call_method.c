@@ -1,10 +1,11 @@
-/* shared/call_method.c: llamar al juego por nombre, igual en las dos plataformas. Aquí un método
-   se entrega a tu función nativa o al código del .so. */
+/* shared/call_method.c: llamar al juego por nombre, igual en las dos
+   plataformas. Aquí un método se entrega a tu función nativa o al código del
+   .so. */
 #include "debug.h"
 
-/* Llama a un método por nombre. words son sus argumentos, como palabras de 32 bits. Si tiene
-   versión nativa corre aquí mismo, sin pasar por ARM. Al volver, comprueba las variables que se
-   estén siguiendo. */
+/* Llama a un método por nombre. words son sus argumentos, como palabras de 32
+   bits. Si tiene versión nativa corre aquí mismo, sin pasar por ARM. Al volver,
+   comprueba las variables que se estén siguiendo. */
 uint64_t call_method(const char *name, const uint32_t *words, int n) {
     int index = native_active(name);
     uint64_t result;

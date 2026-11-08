@@ -1,7 +1,9 @@
-/* android_emu/bionic_pthread.c: threads para el juego. En Android, pthread_mutex_t, pthread_cond_t y
-   sem_t miden 4 bytes, y las versiones de glibc no caben ahí. Por eso esos 4 bytes guardan un
-   pointer al objeto real, que se crea la primera vez que se usa. */
-/* el juego se compiló con time_t de 32 bits; debe ir antes de cualquier #include */
+/* android_emu/bionic_pthread.c: threads para el juego. En Android,
+   pthread_mutex_t, pthread_cond_t y sem_t miden 4 bytes, y las versiones de
+   glibc no caben ahí. Por eso esos 4 bytes guardan un pointer al objeto real,
+   que se crea la primera vez que se usa. */
+/* el juego se compiló con time_t de 32 bits; debe ir antes de cualquier
+   #include */
 #undef _TIME_BITS
 #undef _FILE_OFFSET_BITS
 #include "arm.h"
@@ -12,12 +14,14 @@
 #include <signal.h>
 #include <time.h>
 
-/* Valores que puede tener un mutex de bionic antes de usarse por primera vez. */
+/* Valores que puede tener un mutex de bionic antes de usarse por primera
+   vez. */
 enum { MUTEX_STATIC = 0, MUTEX_STATIC_RECURSIVE = 0x4000, MUTEX_STATIC_ERRORCHECK = 0x8000 };
 /* Protege la creación de los objetos reales. */
 static pthread_mutex_t creation_lock = PTHREAD_MUTEX_INITIALIZER;
 
-/* Leer o escribir 4 bytes aligned es atómico. La memory barrier lo ordena con el objeto que publica. */
+/* Leer o escribir 4 bytes aligned es atómico. La memory barrier lo ordena con
+   el objeto que publica. */
 static uint32_t load_slot(uint32_t *slot) {
     uint32_t v = *(volatile uint32_t *)slot;
     __sync_synchronize();
@@ -59,8 +63,8 @@ static pthread_mutex_t *real_mutex(uint32_t *slot) {
     }
     return (pthread_mutex_t *)(uintptr_t)v;
 }
-/* Crea el mutex real. El pthread_mutexattr_t de bionic y el de glibc guardan un tipo de 4
-   bytes, con los mismos valores. */
+/* Crea el mutex real. El pthread_mutexattr_t de bionic y el de glibc guardan un
+   tipo de 4 bytes, con los mismos valores. */
 static int bionic_mutex_init(uint32_t *slot, const pthread_mutexattr_t *attr) {
     pthread_mutex_t *m = malloc(sizeof *m);
     if (!m) return ENOMEM;
@@ -85,7 +89,8 @@ static int bionic_mutex_lock(uint32_t *s) { return pthread_mutex_lock(real_mutex
 static int bionic_mutex_trylock(uint32_t *s) { return pthread_mutex_trylock(real_mutex(s)); }
 static int bionic_mutex_unlock(uint32_t *s) { return pthread_mutex_unlock(real_mutex(s)); }
 
-/* Una hora absoluta en el reloj que usan las condiciones de glibc, dentro de ns nanosegundos. */
+/* Una hora absoluta en el reloj que usan las condiciones de glibc, dentro de ns
+   nanosegundos. */
 static struct timespec realtime_after(uint64_t ns) {
     struct timespec t;
     clock_gettime(CLOCK_REALTIME, &t);
@@ -100,7 +105,8 @@ static int bionic_mutex_lock_timeout(uint32_t *s, unsigned msecs) {
     return pthread_mutex_timedlock(real_mutex(s), &t);
 }
 
-/* Encuentra la condición real, y la crea si es su primer uso. Una condición sin usar vale 0. */
+/* Encuentra la condición real, y la crea si es su primer uso. Una condición sin
+   usar vale 0. */
 static pthread_cond_t *real_cond(uint32_t *slot) {
     uint32_t v = load_slot(slot);
     if (!v) {
@@ -150,8 +156,8 @@ static int wait_relative(uint32_t *c, uint32_t *m, uint64_t ns) {
 static int bionic_cond_timedwait_relative(uint32_t *c, uint32_t *m, const struct timespec *r) {
     return wait_relative(c, m, (uint64_t)r->tv_sec * 1000000000u + (uint64_t)r->tv_nsec);
 }
-/* El juego da una hora absoluta en el reloj monótono: se convierte en el tiempo que queda por
-   esperar. */
+/* El juego da una hora absoluta en el reloj monótono: se convierte en el tiempo
+   que queda por esperar. */
 static int bionic_cond_timedwait_monotonic(uint32_t *c, uint32_t *m, const struct timespec *t) {
     struct timespec now;
     clock_gettime(CLOCK_MONOTONIC, &now);
@@ -166,7 +172,8 @@ static int bionic_cond_timeout(uint32_t *c, uint32_t *m, unsigned msecs) {
 static int bionic_cond_signal(uint32_t *c) { return pthread_cond_signal(real_cond(c)); }
 static int bionic_cond_broadcast(uint32_t *c) { return pthread_cond_broadcast(real_cond(c)); }
 
-/* Un sem_t no tiene valor inicial estático: siempre se llama antes a sem_init. */
+/* Un sem_t no tiene valor inicial estático: siempre se llama antes a
+   sem_init. */
 /* Crea el semaphore real y guarda su dirección en el hueco de 4 bytes. */
 static int bionic_sem_init(uint32_t *slot, int shared, unsigned value) {
     sem_t *s = malloc(sizeof *s);
@@ -197,7 +204,8 @@ static int bionic_sem_timedwait(uint32_t *s, const struct timespec *t) {
     return sem_timedwait(real_sem(s), t);
 }
 
-/* Los atributos de un thread: 24 bytes en Android, de los que solo miramos unos pocos. */
+/* Los atributos de un thread: 24 bytes en Android, de los que solo miramos unos
+   pocos. */
 typedef struct {
     uint32_t flags; /* bit 0: separado (detached) */
     void *stack_base;
@@ -214,7 +222,8 @@ static int bionic_attr_init(BionicAttr *a) {
     a->guard_size = 4096;
     return 0;
 }
-/* No hay nada que liberar. Las funciones siguientes solo leen o escriben la estructura. */
+/* No hay nada que liberar. Las funciones siguientes solo leen o escriben la
+   estructura. */
 static int bionic_attr_destroy(BionicAttr *a) {
     (void)a;
     return 0;
@@ -264,8 +273,9 @@ static int bionic_getattr_np(pthread_t t, BionicAttr *a) {
     (void)t;
     return bionic_attr_init(a);
 }
-/* El canal con el loader atiende una llamada cada vez, de modo que un segundo thread podría
-   mezclar sus mensajes. Es mejor rechazarlo que fallar más tarde de una forma incomprensible. */
+/* El canal con el loader atiende una llamada cada vez, de modo que un segundo
+   thread podría mezclar sus mensajes. Es mejor rechazarlo que fallar más tarde
+   de una forma incomprensible. */
 static int bionic_create(pthread_t *out, const BionicAttr *a, void *(*start)(void *), void *arg) {
     if (has_host) {
         log_msg("[loader] pthread_create refused: threads need the ARM code on the CPU\n");
@@ -281,7 +291,8 @@ static int bionic_create(pthread_t *out, const BionicAttr *a, void *(*start)(voi
     pthread_attr_destroy(&real);
     return r;
 }
-/* pthread_cleanup_push y pop: el compiler deja esta estructura en el stack del juego. */
+/* pthread_cleanup_push y pop: el compiler deja esta estructura en el stack del
+   juego. */
 typedef struct Cleanup {
     struct Cleanup *prev;
     void (*routine)(void *);
@@ -292,14 +303,17 @@ static void bionic_cleanup_push(Cleanup *c, void (*routine)(void *), void *arg) 
     c->routine = routine;
     c->arg = arg;
 }
-/* La ejecuta si se pide. No se ejecuta si el thread termina con pthread_exit. */
+/* La ejecuta si se pide. No se ejecuta si el thread termina con
+   pthread_exit. */
 static void bionic_cleanup_pop(Cleanup *c, int execute) {
     if (execute) c->routine(c->arg);
 }
 
-/* Macro de la tabla: el nombre que pide el juego y la función que lo atiende. */
+/* Macro de la tabla: el nombre que pide el juego y la función que lo
+   atiende. */
 #define FUNC(sym, fn) {sym, (const void *)(fn), 0}
-/* Lo que atiende este fichero. bionic_find la consulta después de su propia tabla. */
+/* Lo que atiende este fichero. bionic_find la consulta después de su propia
+   tabla. */
 const BionicEntry pthread_entries[] = {
     FUNC("pthread_mutex_init", bionic_mutex_init),
     FUNC("pthread_mutex_destroy", bionic_mutex_destroy),
@@ -345,9 +359,9 @@ const BionicEntry pthread_entries[] = {
     FUNC("pthread_create", bionic_create),
     FUNC("__pthread_cleanup_push", bionic_cleanup_push),
     FUNC("__pthread_cleanup_pop", bionic_cleanup_pop),
-    /* El mismo tamaño y el mismo significado en bionic y glibc: no hace falta wrapper. Un
-       rwlock mide 40 bytes en Android y menos en glibc, y todo a cero es un estado inicial
-       válido. */
+    /* El mismo tamaño y el mismo significado en bionic y glibc: no hace falta
+       wrapper. Un rwlock mide 40 bytes en Android y menos en glibc, y todo a
+       cero es un estado inicial válido. */
     FUNC("pthread_join", pthread_join),
     FUNC("pthread_detach", pthread_detach),
     FUNC("pthread_exit", pthread_exit),

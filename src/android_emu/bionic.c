@@ -1,8 +1,9 @@
-/* android_emu/bionic.c: lo que el juego espera de bionic, la libc de Android. Lo que se comporta
-   igual va directamente a la libc de este sistema, y lo que difiere pasa por un pequeño
-   wrapper. Estas funciones corren dentro del proceso ARM: cruzar a x86_64 por un strlen no
-   tendría sentido. */
-/* el juego se compiló con time_t y off_t de 32 bits; debe ir antes de cualquier #include */
+/* android_emu/bionic.c: lo que el juego espera de bionic, la libc de Android.
+   Lo que se comporta igual va directamente a la libc de este sistema, y lo que
+   difiere pasa por un pequeño wrapper. Estas funciones corren dentro del
+   proceso ARM: cruzar a x86_64 por un strlen no tendría sentido. */
+/* el juego se compiló con time_t y off_t de 32 bits; debe ir antes de cualquier
+   #include */
 #undef _TIME_BITS
 #undef _FILE_OFFSET_BITS
 #include "arm.h"
@@ -28,21 +29,25 @@
 #include <wchar.h>
 #include <wctype.h>
 
-/* El .so pasa los float en registers enteros. Si este sistema es hard-float, una función que
-   recibe o devuelve un float debe indicarlo, o buscaría sus argumentos en s0, d0... */
+/* El .so pasa los float en registers enteros. Si este sistema es hard-float,
+   una función que recibe o devuelve un float debe indicarlo, o buscaría sus
+   argumentos en s0, d0... */
 #define SOFTFP __attribute__((pcs("aapcs")))
 
-/* ---------- Datos que el juego lee directamente: aquí un hook no serviría ---------- */
+/* ---------- Datos que el juego lee directamente: aquí un hook no serviría
+   ---------- */
 
-/* Protección del stack. Sirve cualquier valor mientras no cambie. Este lleva los bytes 00 (fin de
-   cadena), FF (EOF), 0D y 0A (saltos de línea). Las funciones de texto se detienen en ellos,
-   así que un overflow rara vez lo copia entero. No es una dirección. */
+/* Protección del stack. Sirve cualquier valor mientras no cambie. Este lleva
+   los bytes 00 (fin de cadena), FF (EOF), 0D y 0A (saltos de línea). Las
+   funciones de texto se detienen en ellos, así que un overflow rara vez lo
+   copia entero. No es una dirección. */
 static uintptr_t bionic_stack_chk_guard = 0x0A0DFF00u;
 /* El juego la llama si detecta el stack corrupto. No debe volver. */
 static void bionic_stack_chk_fail(void) { die("stack canary destroyed"); }
 
-/* stdin, stdout y stderr: el juego los calcula como &__sF[0], &__sF[1] y &__sF[2], y un FILE
-   mide 84 bytes en Android. real_stream() convierte esas direcciones en los flujos reales. */
+/* stdin, stdout y stderr: el juego los calcula como &__sF[0], &__sF[1] y
+   &__sF[2], y un FILE mide 84 bytes en Android. real_stream() convierte esas
+   direcciones en los flujos reales. */
 #define BIONIC_FILE_SIZE 84
 static uint8_t fake_stdio[3 * BIONIC_FILE_SIZE];
 /* Convierte un FILE* del juego en el flujo real. */
@@ -54,10 +59,10 @@ static FILE *real_stream(FILE *f) {
     return f;
 }
 
-/* En Android 4.4, isalpha() y compañía son código en línea que lee esta tabla. Empieza una
-   posición antes, para que EOF (-1) sea un índice válido. */
-/* Los bits de _ctype_: mayúscula, minúscula, número, espacio, puntuación, control, hexadecimal
-   y blanco. */
+/* En Android 4.4, isalpha() y compañía son código en línea que lee esta tabla.
+   Empieza una posición antes, para que EOF (-1) sea un índice válido. */
+/* Los bits de _ctype_: mayúscula, minúscula, número, espacio, puntuación,
+   control, hexadecimal y blanco. */
 enum { CT_U = 0x01, CT_L = 0x02, CT_N = 0x04, CT_S = 0x08, CT_P = 0x10, CT_C = 0x20, CT_X = 0x40, CT_B = 0x80 };
 /* Cada tabla tiene 257 entradas: EOF y los 256 valores de un byte. */
 static char bionic_ctype[257];
@@ -66,8 +71,8 @@ static const short *bionic_tolower_tab = tolower_table, *bionic_toupper_tab = to
 /* __isthreaded: las macros de stdio lo consultan. */
 static int bionic_isthreaded = 1;
 
-/* Rellena las tablas de caracteres, con los valores de la configuración regional C. Se llama
-   antes de cargar el .so. */
+/* Rellena las tablas de caracteres, con los valores de la configuración
+   regional C. Se llama antes de cargar el .so. */
 void bionic_init(void) {
     for (int c = 0; c < 256; c++) {
         int v = 0;
@@ -97,7 +102,8 @@ static int bionic_posix_memalign(void **out, size_t align, size_t n) {
     return *out ? 0 : ENOMEM;
 }
 static void *bionic_valloc(size_t n) { return arena_memalign(4096, n); }
-/* Estas reservan memoria, así que lo que devuelven debe venir del heap del juego. */
+/* Estas reservan memoria, así que lo que devuelven debe venir del heap del
+   juego. */
 static char *bionic_strdup(const char *s) {
     size_t n = strlen(s) + 1;
     char *d = arena_malloc(n);
@@ -127,7 +133,8 @@ static size_t bionic_strlcpy(char *d, const char *s, size_t size) {
     }
     return n;
 }
-/* Añade a d sin pasar de size bytes en total, y devuelve la longitud que habría tenido. */
+/* Añade a d sin pasar de size bytes en total, y devuelve la longitud que habría
+   tenido. */
 static size_t bionic_strlcat(char *d, const char *s, size_t size) {
     size_t used = strnlen(d, size);
     if (used == size) return size + strlen(s);
@@ -139,8 +146,8 @@ static int bionic_strerror_r(int e, char *buf, size_t n) {
     return 0;
 }
 
-/* Las variantes _chk (FORTIFY): la misma función con un argumento más, el tamaño real del
-   buffer, que aquí se ignora. */
+/* Las variantes _chk (FORTIFY): la misma función con un argumento más, el
+   tamaño real del buffer, que aquí se ignora. */
 static void *bionic_memcpy_chk(void *d, const void *s, size_t n, size_t dl) { (void)dl; return memcpy(d, s, n); }
 static void *bionic_memmove_chk(void *d, const void *s, size_t n, size_t dl) { (void)dl; return memmove(d, s, n); }
 static void *bionic_memset_chk(void *d, int c, size_t n, size_t dl) { (void)dl; return memset(d, c, n); }
@@ -183,7 +190,8 @@ static int bionic_open_2(const char *p, int flags) { return open(p, flags); }
 /* La variante FORTIFY de umask. Aquí no se comprueba nada. */
 static mode_t bionic_umask_chk(mode_t m) { return umask(m); }
 
-/* ---------- FILE: toda función que recibe un flujo debe traducirlo con real_stream() ---------- */
+/* ---------- FILE: toda función que recibe un flujo debe traducirlo con
+   real_stream() ---------- */
 
 static int bionic_fclose(FILE *f) { return fclose(real_stream(f)); }
 static FILE *bionic_freopen(const char *p, const char *m, FILE *f) { return freopen(p, m, real_stream(f)); }
@@ -226,8 +234,9 @@ static int bionic_fscanf(FILE *f, const char *fmt, ...) {
     return r;
 }
 
-/* La hora actual, con milisegundos. Es una función obsoleta, y por eso no depende de la ftime de
-   libc. La forma de struct timeb es la de Android en 32 bits. */
+/* La hora actual, con milisegundos. Es una función obsoleta, y por eso no
+   depende de la ftime de libc. La forma de struct timeb es la de Android en 32
+   bits. */
 typedef struct {
     int32_t time;     /* segundos desde 1970 */
     uint16_t millitm; /* milisegundos */
@@ -244,7 +253,8 @@ static int bionic_ftime(BionicTimeb *t) {
     return 0;
 }
 
-/* ---------- Ficheros: stat y dirent de Android son como las versiones de 64 bits ---------- */
+/* ---------- Ficheros: stat y dirent de Android son como las versiones de 64
+   bits ---------- */
 
 static int bionic_stat(const char *p, struct stat64 *o) { return stat64(p, o); }
 static int bionic_lstat(const char *p, struct stat64 *o) { return lstat64(p, o); }
@@ -252,17 +262,19 @@ static int bionic_fstat(int fd, struct stat64 *o) { return fstat64(fd, o); }
 static int bionic_fstatat(int d, const char *p, struct stat64 *o, int fl) { return fstatat64(d, p, o, fl); }
 static struct dirent64 *bionic_readdir(DIR *d) { return readdir64(d); }
 
-/* ---------- Matemáticas: el .so usa softfp, y este programa puede ser hard-float ---------- */
+/* ---------- Matemáticas: el .so usa softfp, y este programa puede ser
+   hard-float ---------- */
 
-/* sin y cos usan la misma implementación que el código nativo: eso permite comparar imágenes
-   enteras entre ARM y x86_64. Cámbialas por las de libm cuando dejes de comparar. */
+/* sin y cos usan la misma implementación que el código nativo: eso permite
+   comparar imágenes enteras entre ARM y x86_64. Cámbialas por las de libm
+   cuando dejes de comparar. */
 SOFTFP static double bionic_sin(double x) { return math_sin(x); }
 SOFTFP static double bionic_cos(double x) { return math_cos(x); }
 SOFTFP static float bionic_sinf(float x) { return (float)math_sin(x); }
 SOFTFP static float bionic_cosf(float x) { return (float)math_cos(x); }
 
-/* Generan las versiones double y float de una función de uno o dos argumentos, con la ABI del
-   juego. */
+/* Generan las versiones double y float de una función de uno o dos argumentos,
+   con la ABI del juego. */
 #define MATH1(n)                                                                             \
     SOFTFP static double bionic_##n(double x) { return n(x); }                                    \
     SOFTFP static float bionic_##n##f(float x) { return n##f(x); }
@@ -333,8 +345,8 @@ SOFTFP static double bionic_difftime(time_t a, time_t b) { return difftime(a, b)
 
 /* ---------- Sistema ---------- */
 
-/* Los nombres de sysconf de Android no son los de glibc: 0x27 es _SC_PAGESIZE, 0x61 es
-   _SC_NPROCESSORS_ONLN... */
+/* Los nombres de sysconf de Android no son los de glibc: 0x27 es _SC_PAGESIZE,
+   0x61 es _SC_NPROCESSORS_ONLN... */
 static long bionic_sysconf(int name) {
     switch (name) {
     case 0x0006: return sysconf(_SC_CLK_TCK);
@@ -349,7 +361,8 @@ static long bionic_sysconf(int name) {
     errno = EINVAL;
     return -1;
 }
-/* La glibc antigua no la exporta, así que se hace con una syscall directa al kernel. */
+/* La glibc antigua no la exporta, así que se hace con una syscall directa al
+   kernel. */
 static pid_t bionic_gettid(void) { return (pid_t)syscall(SYS_gettid); }
 /* La syscall propia de ARM, resuelta con la función del compiler. */
 static int bionic_cacheflush(long start, long end, long flags) {
@@ -357,7 +370,8 @@ static int bionic_cacheflush(long start, long end, long flags) {
     __builtin___clear_cache((char *)start, (char *)end);
     return 0;
 }
-/* Escribe errno y devuelve -1, como esperan las llamadas al sistema de bionic. */
+/* Escribe errno y devuelve -1, como esperan las llamadas al sistema de
+   bionic. */
 static int bionic_set_errno(int e) {
     errno = e;
     return -1;
@@ -373,15 +387,16 @@ static void bionic_assert2(const char *file, int line, const char *fn, const cha
     log_msg("[android] assert %s:%d (%s): %s\n", file, line, fn, msg);
     die("the .so failed an assertion");
 }
-/* Las antiguas operaciones atómicas de Android. Devuelven el valor anterior, y cmpxchg devuelve
-   0 si hizo el cambio. */
+/* Las antiguas operaciones atómicas de Android. Devuelven el valor anterior, y
+   cmpxchg devuelve 0 si hizo el cambio. */
 static int bionic_atomic_cmpxchg(int old, int new_value, volatile int *p) {
     return __sync_val_compare_and_swap(p, old, new_value) != old;
 }
 static int bionic_atomic_swap(int value, volatile int *p) { return __sync_lock_test_and_set(p, value); }
 static int bionic_atomic_dec(volatile int *p) { return __sync_fetch_and_sub(p, 1); }
 static int bionic_atomic_inc(volatile int *p) { return __sync_fetch_and_add(p, 1); }
-/* Espera en una dirección mientras conserve ese valor, con una syscall directa al kernel. */
+/* Espera en una dirección mientras conserve ese valor, con una syscall directa
+   al kernel. */
 static int bionic_futex_wait(volatile void *p, int value, const struct timespec *t) {
     return (int)syscall(SYS_futex, p, 0 /* FUTEX_WAIT */, value, t, NULL, 0);
 }
@@ -390,7 +405,8 @@ static int bionic_futex_wake(volatile void *p, int count) {
     return (int)syscall(SYS_futex, p, 1 /* FUTEX_WAKE */, count, NULL, NULL, 0);
 }
 
-/* ---------- Log de Android: los mensajes van a la salida de error ---------- */
+/* ---------- Log de Android: los mensajes van a la salida de error
+   ---------- */
 
 /* Formatea y envía el mensaje. Las variantes con formato acaban aquí. */
 static int bionic_log_vprint(int prio, const char *tag, const char *fmt, va_list a) {
@@ -437,19 +453,21 @@ static void bionic_log_assert(const char *cond, const char *tag, const char *fmt
 
 /* ---------- C++ ---------- */
 
-/* new y delete son malloc y free. Fíjate en la j de _Znwj: size_t es unsigned int en ARM32. */
+/* new y delete son malloc y free. Fíjate en la j de _Znwj: size_t es unsigned
+   int en ARM32. */
 static void *cxx_new(size_t n) { return arena_malloc(n); }
 static void cxx_delete(void *p) { arena_free(p); }
 static void *cxx_new_nothrow(size_t n, const void *tag) { (void)tag; return arena_malloc(n); }
 static void cxx_delete_nothrow(void *p, const void *tag) { (void)tag; arena_free(p); }
 /* Se llamó a un método virtual puro: es un error del juego. */
 static void cxx_pure(void) { die("pure virtual method called"); }
-/* El bit 0 de la guard word dice que el objeto está listo. Con threads, aquí haría falta
-   un lock de verdad. */
+/* El bit 0 de la guard word dice que el objeto está listo. Con threads, aquí
+   haría falta un lock de verdad. */
 static int cxx_guard_acquire(uint32_t *g) { return !(*g & 1); }
 static void cxx_guard_release(uint32_t *g) { *g = 1; }
 static void cxx_guard_abort(uint32_t *g) { (void)g; }
-/* No se registran destructores de salida: el programa termina sin ejecutarlos. */
+/* No se registran destructores de salida: el programa termina sin
+   ejecutarlos. */
 static int bionic_cxa_atexit(void *f, void *a, void *d) {
     (void)f;
     (void)a;
@@ -467,11 +485,13 @@ static int bionic_aeabi_atexit(void *o, void *f, void *d) {
 /* std::nothrow: un objeto vacío, y al juego solo le importa su dirección. */
 static uint8_t cxx_nothrow;
 
-/* ---------- Funciones de apoyo de la ABI de ARM, para un .so que las importe ---------- */
+/* ---------- Funciones de apoyo de la ABI de ARM, para un .so que las importe
+   ---------- */
 
 static int bionic_idiv(int a, int b) { return a / b; }
 static unsigned bionic_uidiv(unsigned a, unsigned b) { return a / b; }
-/* Cociente en r0 y resto en r1: justo lo que parece un resultado de 64 bits en esta ABI. */
+/* Cociente en r0 y resto en r1: justo lo que parece un resultado de 64 bits en
+   esta ABI. */
 static uint64_t bionic_idivmod(int a, int b) {
     return (uint32_t)(a / b) | ((uint64_t)(uint32_t)(a % b) << 32);
 }
@@ -486,16 +506,18 @@ static void bionic_aeabi_memset(void *d, size_t n, int c) { memset(d, c, n); }
 static void bionic_aeabi_memclr(void *d, size_t n) { memset(d, 0, n); }
 
 /* ---------- libdl ----------
-   dlsym pasa por el mismo resolvedor que las importaciones, así que no puede saltarse una
-   versión nativa. */
+   dlsym pasa por el mismo resolvedor que las importaciones, así que no puede
+   saltarse una versión nativa. */
 
 /* No se abre nada: las funciones se resuelven por nombre. */
 static void *bionic_dlopen(const char *n, int f) {
     (void)f;
     log_msg("[hook] dlopen(%s)\n", n ? n : "NULL");
-    return (void *)1; /* un identificador que nadie lee, solo distinto de NULL */
+    return (void *)1; /* un identificador que nadie lee, solo distinto de
+                         NULL */
 }
-/* La función pedida se resuelve como una importación, y por tanto recibe un hook. */
+/* La función pedida se resuelve como una importación, y por tanto recibe un
+   hook. */
 static void *bionic_dlsym(void *h, const char *n) {
     (void)h;
     return resolve_import(n);
@@ -508,15 +530,17 @@ static int bionic_dlclose(void *h) {
 static const char *bionic_dlerror(void) { return NULL; }
 
 /* ---------- La tabla ----------
-   Lo que no aparece en ella recibe un stub que devuelve 0 y avisa la primera vez. Si una
-   función tiene versión nativa, lo que indique esta tabla no llega a ejecutarse. */
+   Lo que no aparece en ella recibe un stub que devuelve 0 y avisa la primera
+   vez. Si una función tiene versión nativa, lo que indique esta tabla no llega
+   a ejecutarse. */
 
 /* Variables de libc que el juego importa como datos. */
 extern char **environ;
 extern char *__progname;
 
-/* Macros de la tabla. FUNC asigna un nombre a una función. SAME usa la función de libc con ese
-   nombre. WRAP usa el wrapper bionic_nombre. MATHS, sus versiones double y float. DATA, un dato. */
+/* Macros de la tabla. FUNC asigna un nombre a una función. SAME usa la función
+   de libc con ese nombre. WRAP usa el wrapper bionic_nombre. MATHS, sus
+   versiones double y float. DATA, un dato. */
 #define FUNC(sym, fn) {sym, (const void *)(fn), 0}
 #define SAME(fn) {#fn, (const void *)(fn), 0}
 #define WRAP(fn) {#fn, (const void *)(bionic_##fn), 0}
@@ -660,7 +684,8 @@ static const BionicEntry bionic_table[] = {
     FUNC("__fpclassifyf", bionic_fpclassifyf),
 };
 
-/* Busca un nombre en las dos tablas. is_data dice si es un dato. Devuelve 0 si no está. */
+/* Busca un nombre en las dos tablas. is_data dice si es un dato. Devuelve 0 si
+   no está. */
 const void *bionic_find(const char *name, int *is_data) {
     *is_data = 0;
     for (unsigned i = 0; i < sizeof bionic_table / sizeof bionic_table[0]; i++)

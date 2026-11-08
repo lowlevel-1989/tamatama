@@ -1,10 +1,12 @@
-/* shared/support.c: pequeños servicios que comparten los dos programas, sobre libc. */
+/* shared/support.c: pequeños servicios que comparten los dos programas, sobre
+   libc. */
 #include "common.h"
 #include "platform.h"
 #include <time.h>
 
-/* Mensaje de diagnóstico: se formatea aquí y la plataforma decide adónde va. Casi todos caben
-   en el buffer del stack; uno más largo se formatea otra vez en memoria pedida. */
+/* Mensaje de diagnóstico: se formatea aquí y la plataforma decide adónde va.
+   Casi todos caben en el buffer del stack; uno más largo se formatea otra vez
+   en memoria pedida. */
 void log_msg(const char *f, ...) {
     char text[1024];
     va_list a;

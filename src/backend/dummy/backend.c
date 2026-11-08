@@ -1,6 +1,8 @@
-/* backend/dummy/backend.c: sin ventana y sin dibujo. Sirve para probar la lógica del juego, y es lo
-   que lleva loader-arm cuando el backend de loader necesita libraries de x86_64. Las funciones GL
-   son las de backend/gl_defaults.c. Termina tras BACKEND_FRAMES imágenes, 600 si no se indica. */
+/* backend/dummy/backend.c: sin ventana y sin dibujo. Sirve para probar la
+   lógica del juego, y es lo que lleva loader-arm cuando el backend de loader
+   necesita libraries de x86_64. Las funciones GL son las de
+   backend/gl_defaults.c. Termina tras BACKEND_FRAMES imágenes, 600 si no se
+   indica. */
 #include "common.h"
 #include "backend.h"
 

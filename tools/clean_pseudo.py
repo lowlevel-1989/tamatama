@@ -1,100 +1,182 @@
 #!/usr/bin/env python3
-"""tools/clean_pseudo.py: limpia el pseudocode de r2ghidra: pone nombre a las llamadas y a las
-variables globales, y resuelve los strings. Lee el pseudocode por la entrada estándar.
+"""tools/clean_pseudo.py: limpia el pseudocode de r2ghidra: pone nombre a las
+llamadas y a las variables globales, y resuelve los strings. Lee el pseudocode
+por la entrada estándar.
 
-  r2 -q -e scr.color=0 -a arm -b 16 -c 'aaa; s 0x2d410; pdg; s 0x2ef74; pdg; s 0x2cf44; pdg; s 0x3f460; pdg; s 0x3f408; pdg; s 0x3ec6c; pdg; s 0x3ec10; pdg; s 0x3ec10: pdg; s 0x3f698; pdg; s 0x51664; pdg; s 0x51651; pdg; s 0x44d4c; pdg; s 0x44d40; pdg; s 0x44d00; pdg; s 0x3f1c4; pdg; s 0x3f1a8; pdg; s 0x3ed40; pdg; s 0x515c4; pdg; s 0x51648; pdg; s 0x516f0; pdg; s 0x506b8; pdg; s 0x506d8; pdg; s 0x52bb8; pdg; s 0x52b18; pdg; s 0x3d560; pdg; s 0x2f5e0; pdg; s 0x38928; pdg; s 0x38908; pdg; s 0x32e90; pdg; s 0x44cec; pdg; s 0x2f684; pdg; s 0x32e80; pdg; s 0x32d20; pdg; s 0x32880; pdg; s 0x2f628; af; pdg; s 0x3be88; pdg; s 0x3bd64; pdg; s 0x320f4; pdg; s 0x320b0; pdg; s 0x30f40; pdg; s 0x3b0a0; pdg; s 0x3bc7c; pdg; s 0x3b184; pdg; s 0x38e48; pdg; s 0x38bc4; pdg' apk/lib/armeabi/libAndroidGame001JNI.so | python tools/clean_pseudo.py apk/lib/armeabi/libAndroidGame001JNI.so --rules rules/bringup.txt | tee decode.txt
+  r2 -q -e scr.color=0 -a arm -b 16 \
+    -c 'aaa; s 0x2d410; pdg; s 0x2ef74; pdg; s 0x2cf44; pdg; s 0x3f460; pdg' \
+    -c 's 0x3f408; pdg; s 0x3ec6c; pdg; s 0x3ec10; pdg; s 0x3ec10: pdg' \
+    -c 's 0x3f698; pdg; s 0x51664; pdg; s 0x51651; pdg; s 0x44d4c; pdg' \
+    -c 's 0x44d40; pdg; s 0x44d00; pdg; s 0x3f1c4; pdg; s 0x3f1a8; pdg' \
+    -c 's 0x3ed40; pdg; s 0x515c4; pdg; s 0x51648; pdg; s 0x516f0; pdg' \
+    -c 's 0x506b8; pdg; s 0x506d8; pdg; s 0x52bb8; pdg; s 0x52b18; pdg' \
+    -c 's 0x3d560; pdg; s 0x2f5e0; pdg; s 0x38928; pdg; s 0x38908; pdg' \
+    -c 's 0x32e90; pdg; s 0x44cec; pdg; s 0x2f684; pdg; s 0x32e80; pdg' \
+    -c 's 0x32d20; pdg; s 0x32880; pdg; s 0x2f628; af; pdg; s 0x3be88; pdg' \
+    -c 's 0x3bd64; pdg; s 0x320f4; pdg; s 0x320b0; pdg; s 0x30f40; pdg' \
+    -c 's 0x3b0a0; pdg; s 0x3bc7c; pdg; s 0x3b184; pdg; s 0x38e48; pdg' \
+    -c 's 0x38bc4; pdg' \
+    apk/lib/armeabi/libAndroidGame001JNI.so \
+    | python tools/clean_pseudo.py apk/lib/armeabi/libAndroidGame001JNI.so \
+      --rules rules/bringup.txt | tee decode.txt
 
-Si hay un rules.txt en esta carpeta, usa sus reglas symbol. Con --rules eliges otro fichero.
+Si hay un rules.txt en esta carpeta, usa sus reglas symbol. Con --rules eliges
+otro fichero.
 """
 # Lo que hace:
-#   (**(*x + 0x1c4))(x,a,b)          pasa a  env->GetStaticMethodID(a,b), si la función usa JNI
-#   (**(*x + 0x24))(x,a)             pasa a  x->vcall_0x24(a), un método virtual, si no la usa
-#   (**(*x + 0x28))(x,a,extraout_r2,*(*x + 0x28),in_r3)  pasa a  x->vcall_0x28(a), sin los restos
-#   f(uint noname_0,int16_t arg1) con //A::f(char const*)  pasa a  A::f(char const* arg1)
-#   *0x2e7cc + 0x2e76a               pasa a  "OnOutputStreamWrite", si ahí hay un texto
-#   *0x52b40 + 0x52b2a               pasa a  &DAT_c2d64, la dirección de una global
-#   f(x, extraout_s1)                pasa a  f(x, /* r1 */): un .so sin VFP no tiene s1; se lee r1 de las instrucciones
-#   varias llamadas a f              sus argumentos se leen por orden, si están en el nivel de arriba y sin saltos
-#   v = &g; f(v); v[1] = 0           pasa a  f(&g); g.field_0x4 = 0, aunque v se reutilice para otra global
-#   String::operator+(&local_24, &a, &b)  pasa a  string local_24 = a + b, si se sabe la clase de local_24
-#   *0x2f6c8 + -0x948                igual, con el pc entero (0x2f6b8): Ghidra a veces deja solo sus 16 bits bajos
+#   (**(*x + 0x1c4))(x,a,b)          pasa a  env->GetStaticMethodID(a,b), si la
+#                                            función usa JNI
+#   (**(*x + 0x24))(x,a)             pasa a  x->vcall_0x24(a), un método
+#                                            virtual, si no la usa
+#   (**(*x + 0x28))(x,a,extraout_r2,*(*x + 0x28),in_r3)  pasa a
+#   x->vcall_0x28(a), sin los restos
+#   f(uint noname_0,int16_t arg1) con //A::f(char const*)  pasa a  A::f(char
+#   const* arg1)
+#   *0x2e7cc + 0x2e76a               pasa a  "OnOutputStreamWrite", si ahí hay
+#                                            un texto
+#   *0x52b40 + 0x52b2a               pasa a  &DAT_c2d64, la dirección de una
+#                                            global
+#   f(x, extraout_s1)                pasa a  f(x, /* r1 */): un .so sin VFP no
+#                                            tiene s1; se lee r1 de las
+#                                            instrucciones
+#   varias llamadas a f              sus argumentos se leen por orden, si están
+#                                    en el nivel de arriba y sin saltos
+#   v = &g; f(v); v[1] = 0           pasa a  f(&g); g.field_0x4 = 0, aunque v se
+#                                            reutilice para otra global
+#   String::operator+(&local_24, &a, &b)  pasa a  string local_24 = a + b, si se
+#                                            sabe la clase de local_24
+#   *0x2f6c8 + -0x948                igual, con el pc entero (0x2f6b8): Ghidra a
+#                                    veces deja solo sus 16 bits bajos
 #   *(*0x52b40 + 0x52b2a)            pasa a  DAT_c2d64, su valor
-#   *(iVar6 + *0x32f78)              pasa a  &DAT_c00c0: una global, leída a través de la GOT
+#   *(iVar6 + *0x32f78)              pasa a  &DAT_c00c0: una global, leída a
+#                                            través de la GOT
 #   method.Java::Out.write_int_(     pasa a  Out::write(
 #   sym.Java::Out::_Out____1(        pasa a  Out::~Out(
-#   pcVar1 = *0x9f938; (*pcVar1)(a)  pasa a  __kuser_cmpxchg(a), una función del kernel
-#   iVar1 = &stack0xfffffff0; ... iVar1 + -8    pasa a  &local_18
+#   pcVar1 = *0x9f938; (*pcVar1)(a)  pasa a  __kuser_cmpxchg(a), una función del
+#                                            kernel
+#   iVar1 = &stack0xfffffff0; ... iVar1 + -8  pasa a  &local_18
 #   iStack_18 y &stack0xffffffe8     pasan a  local_18 y &local_18
-#   *0x515f0                         pasa a  0.7f, o a 0x10004: la constante que hay en esa dirección
-#   iVar1 = *0x517a4; ... iVar1 + 0x5170c      pasa a  &DAT_c2d50, si se suman el literal y su pc
-#   sym.Gamedata_SetVolume_float_()  pasa a  Gamedata_SetVolume(/* float */): falta un argumento
+#   *0x515f0                         pasa a  0.7f, o a 0x10004: la constante que
+#                                            hay en esa dirección
+#   iVar1 = *0x517a4; ... iVar1 + 0x5170c  pasa a  &DAT_c2d50, si se suman el
+#                                            literal y su pc
+#   sym.Gamedata_SetVolume_float_()  pasa a  Gamedata_SetVolume(/* float */):
+#                                            falta un argumento
 #   y si ese register no se ha tocado, pasa a  Gamedata_SetVolume(arg1 /* r0 */)
-#   iVar2 = arg1; ... f(iVar2)       pasa a  f(arg1), si ninguna de las dos cambia
+#   iVar2 = arg1; ... f(iVar2)       pasa a  f(arg1), si ninguna de las dos
+#                                            cambia
 #   piVar1 = f(); piVar1->g();       pasa a  f()->g(), si piVar1 no se usa más
-#   __gnu_thumb1_case_sqi()          pasa a  un comentario, y se quitan los restos de VFP de la tabla
+#   __gnu_thumb1_case_sqi()          pasa a  un comentario, y se quitan los
+#                                            restos de VFP de la tabla
 #   if (5 < x)                       pasa a  if (x > 5)
-#   code_r0x0005171e y joined_r0x00038f1a   pasan a  L_5171e y L_38f1a
-#   if ((x + -0xc != &vacia) && ...) el destructor de std::string, expandido, pasa a  x.~string()
-#   x = &vtable for A + 8; B::~B(&x) un destructor expandido, pasa a  x.~A()
-#   p = &t; e = p + 0x40; do {...}   un recorrido con pointers, pasa a  for (int i...) con t[i]
+#   code_r0x0005171e y joined_r0x00038f1a  pasan a  L_5171e y L_38f1a
+#   if ((x + -0xc != &vacia) && ...) el destructor de std::string, expandido,
+#   pasa a  x.~string()
+#   x = &vtable for A + 8; B::~B(&x) un destructor expandido, pasa a
+#                                    x.~A()
+#   p = &t; e = p + 0x40; do {...}   un recorrido con pointers, pasa a  for (int
+#                                    i...) con t[i]
 #   A::A(&local_1c, a)               pasa a  A local_1c(a), si se sabe la firma
 #   A::m(&local_1c, a)               pasa a  local_1c.m(a)
-#   B::f(&local_18, a), como primer uso, pasa a  A local_18 = B::f(a): devuelve el objeto
+#   B::f(&local_18, a), como primer uso, pasa a  A local_18 = B::f(a): devuelve
+#                                    el objeto
 #   Clase::m_x, dentro de Clase      pasa a  m_x
-#   f(/* char const* */)             pasa a  f("texto"), si lo dicen las instrucciones Thumb del .so
-#   f(uint noname_0) con in_r0       pasa a  f(uint arg0): in_r0 es el mismo register que ese parámetro
-#   vm->AttachCurrentThread(&local_1c, 0)    local_1c pasa a  JNIEnv *env, y vm a  JavaVM *vm y g_vm
-#   __aeabi_f2d(x); env->CallStaticVoidMethod()    pasa a  env->CallStaticVoidMethod(clase, metodo, (double)x)
-#   __aeabi_fmul(a, 100.0f)          pasa a  a * 100.0f, y __fixsfsi(x) a  (int)x
+#   f(/* char const* */)             pasa a  f("texto"), si lo dicen las
+#                                            instrucciones Thumb del .so
+#   f(uint noname_0) con in_r0       pasa a  f(uint arg0): in_r0 es el mismo
+#                                            register que ese parámetro
+#   vm->AttachCurrentThread(&local_1c, 0)  local_1c pasa a  JNIEnv *env, y vm
+#                                    a  JavaVM *vm y g_vm
+#   __aeabi_f2d(x); env->CallStaticVoidMethod()  pasa a
+#                                    env->CallStaticVoidMethod(clase, metodo,
+#                                    (double)x)
+#   __aeabi_fmul(a, 100.0f)          pasa a  a * 100.0f, y __fixsfsi(x) a
+#                                            (int)x
 #   __aeabi_fcmplt(a, b)             pasa a  a < b
-#   __aeabi_idivmod(a, b); x = extraout_r1;    pasa a  x = a % b, y v = __aeabi_idiv(a, b) a  v = a / b
-#   __aeabi_ldivmod(g, (&g)[1])      pasa a  g / 0x3e8: el divisor va en r2:r3 y se lee de las instrucciones
-#   ((x >> 0x1f) >> 0x11) + x >> 0xf pasa a  x / 0x8000: la división con signo entre una potencia de 2
+#   __aeabi_idivmod(a, b); x = extraout_r1;  pasa a  x = a % b, y v =
+#                                            __aeabi_idiv(a, b) a  v = a / b
+#   __aeabi_ldivmod(g, (&g)[1])      pasa a  g / 0x3e8: el divisor va en r2:r3 y
+#                                            se lee de las instrucciones
+#   ((x >> 0x1f) >> 0x11) + x >> 0xf pasa a  x / 0x8000: la división con signo
+#                                    entre una potencia de 2
 #   v = a < b; if (v == 0) {         pasa a  if (a >= b) {
 #   arg1_01 = arg1                   arg1_01 es arg1 con otro nombre
-#   Camera::f(x, a), con f(float)    pasa a  x->f(a): sobra un argumento, así que es el this
-#   (***x)()                         pasa a  x->vcall_0x0(), la primera entrada de la vtable
-#   (**(*x + 4))()                   pasa a  x->vcall_0x4(): Ghidra escribe en decimal los menores de 10
+#   Camera::f(x, a), con f(float)    pasa a  x->f(a): sobra un argumento, así
+#                                            que es el this
+#   (***x)()                         pasa a  x->vcall_0x0(), la primera entrada
+#                                            de la vtable
+#   (**(*x + 4))()                   pasa a  x->vcall_0x4(): Ghidra escribe en
+#                                            decimal los menores de 10
 #   &local_18 + -0x14                pasa a  &local_2c
-#   int16_t arg1                     pasa a  int arg1: Ghidra adivina, y en ARM los registers son de 32 bits
-#   p = &DAT_bc6fc; **(p + 0x4bc)    pasa a  la global a la que apunta esa entrada de la GOT
+#   int16_t arg1                     pasa a  int arg1: Ghidra adivina, y en ARM
+#                                            los registers son de 32 bits
+#   p = &DAT_bc6fc; **(p + 0x4bc)    pasa a  la global a la que apunta esa
+#                                            entrada de la GOT
 #   v = 60.0f; *(this + 0xc) = v     pasa a  this->field_0xc = 60.0f
-#   v = g; *(v + 0x20) = *(v + 0x20) + 1    pasa a  g->field_0x20 += 1
+#   v = g; *(v + 0x20) = *(v + 0x20) + 1  pasa a  g->field_0x20 += 1
 #   ftime(&t); srand48(local_18)     pasa a  struct timeb t; srand48(t.millitm)
-#   iVar3 = (float)a; ... iVar3 = 5  pasa a  fVar3 = (float)a; ... iVar3 = 5: un register, dos variables
-#   Camera *arg1_00                  pasa a  Camera *camera, si no hay otra con ese nombre
-#   las líneas que Ghidra parte se unen, y todo se vuelve a sangrar según sus llaves
+#   iVar3 = (float)a; ... iVar3 = 5  pasa a  fVar3 = (float)a; ... iVar3 = 5: un
+#                                            register, dos variables
+#   Camera *arg1_00                  pasa a  Camera *camera, si no hay otra con
+#                                            ese nombre
+#   las líneas que Ghidra parte se unen, y todo se vuelve a sangrar según sus
+#   llaves
 #   p = &g; *p = 1                   pasa a  g = 1
-#   p = &g; ... p[4], con saltos y loops   pasa a  g[4] si p se copia o recorre g, y si no a  g.field_0x10
-#   v = (&g)[1]; h.field_0x0 = g; h.field_0x4 = v   pasa a  h = g: los 8 bytes de un long long, mitad a mitad
-#   *(&g + 0xc) y &g + 0x18          pasan a  g.field_0xc y &g.field_0x18: cuentan bytes, no elementos
-#   *(&g + i * 8 + 4)                pasa a  g[i].field_0x4, también con v = i * 8; *(&g + v) y v = &g + i * 8; *(v + 4)
-#   g.field_0x44, si g tiene elementos de 0x24 bytes    pasa a  g[1].field_0x20
-#   local_38 = arg1; g = local_38;   pasa a  g = arg1, si nadie toma la dirección de local_38
+#   p = &g; ... p[4], con saltos y loops  pasa a  g[4] si p se copia o recorre
+#                                            g, y si no a  g.field_0x10
+#   v = (&g)[1]; h.field_0x0 = g; h.field_0x4 = v  pasa a  h = g: los 8 bytes de
+#                                            un long long, mitad a mitad
+#   *(&g + 0xc) y &g + 0x18          pasan a  g.field_0xc y &g.field_0x18:
+#                                             cuentan bytes, no elementos
+#   *(&g + i * 8 + 4)                pasa a  g[i].field_0x4, también con v = i *
+#                                            8; *(&g + v) y v = &g + i * 8; *(v
+#                                            + 4)
+#   g.field_0x44, si g tiene elementos de 0x24 bytes  pasa a  g[1].field_0x20
+#   local_38 = arg1; g = local_38;   pasa a  g = arg1, si nadie toma la
+#                                            dirección de local_38
 #   -(c) | 0xb4                      pasa a  (c) ? -1 : 0xb4
-#   iVar2 = 0x248; ... *(iVar3 + iVar2)    la asignación desaparece cuando ya se sabe qué global es
-#   printf("x=%d")                   pasa a  printf("x=%d", /* r1 */): el formato pide un valor que Ghidra no enseña
-#   uint32_t arg1_01, sin ser parámetro     pasa a  uVar18, como las demás variables
-#   0x41c64e6d * x + 0x3039          pasa a  x * 0x41c64e6d + 0x3039, y 0xfff0fff7 & x a  x & 0xfff0fff7
+#   iVar2 = 0x248; ... *(iVar3 + iVar2)  la asignación desaparece cuando ya se
+#                                    sabe qué global es
+#   printf("x=%d")                   pasa a  printf("x=%d", /* r1 */): el
+#                                            formato pide un valor que Ghidra no
+#                                            enseña
+#   uint32_t arg1_01, sin ser parámetro  pasa a  uVar18, como las demás
+#                                            variables
+#   0x41c64e6d * x + 0x3039          pasa a  x * 0x41c64e6d + 0x3039, y
+#                                            0xfff0fff7 & x a  x & 0xfff0fff7
 #   v = f(); g = v; if (v != 0)      pasa a  g = f(); if (g != 0)
 #   v = "(I)V"; ... f(v)             pasa a  f("(I)V")
 #   memcpy(&t, "texto", 0x34); f(&t) pasa a  f("texto")
 #   la comprobación de __stack_chk_guard, que añade el compilador, desaparece
-#   if (a) { if (b) { if (c) {...}}} pasa a  if (!a) goto L_done; if (!b) goto L_done; ...
-#   sym.A::f(x)                      lleva encima  // @0x52a10  A::f(int), para seguir con pdg @ 0x52a10
-#   DAT_c2d4c y fcn.0002d2e8         pasan al nombre de symbol en rules.txt, con la dirección encima
-#   loc.imp.memcpy, class.Stream y method.const.A.m___const    pasan a  memcpy, Stream::Stream y A::m
-#   f(noname_1, x) con noname_1 sin asignar    pasa a  f(/* r1 */, x), o al valor si lo dicen las instrucciones
-#   (uint noname_0, int arg1)        pasa a  (uint arg0, uint arg1): el nombre dice en qué register entró
-#   printf(f, v, v >> 0x20)          pasa a  printf(f, v): las dos mitades de un double
-#   p = this; p[7] = 1               pasa a  this->field_0x1c = 1: p[7] cuenta palabras, y el campo, bytes
+#   if (a) { if (b) { if (c) {...}}} pasa a  if (!a) goto L_done; if (!b) goto
+#                                    L_done; ...
+#   sym.A::f(x)                      lleva encima  // @0x52a10  A::f(int), para
+#                                                  seguir con pdg @ 0x52a10
+#   DAT_c2d4c y fcn.0002d2e8         pasan al nombre de symbol en rules.txt, con
+#                                    la dirección encima
+#   loc.imp.memcpy, class.Stream y method.const.A.m___const  pasan a  memcpy,
+#   Stream::Stream y A::m
+#   f(noname_1, x) con noname_1 sin asignar  pasa a  f(/* r1 */, x), o al valor
+#                                            si lo dicen las instrucciones
+#   (uint noname_0, int arg1)        pasa a  (uint arg0, uint arg1): el nombre
+#                                            dice en qué register entró
+#   printf(f, v, v >> 0x20)          pasa a  printf(f, v): las dos mitades de un
+#                                            double
+#   p = this; p[7] = 1               pasa a  this->field_0x1c = 1: p[7] cuenta
+#                                            palabras, y el campo, bytes
 #   *(*(x + 0x8c) + 8)               pasa a  x->field_0x8c->field_0x8
-#   this + arg2 * 0x14               pasa a  &this->array_0x0[arg2]: la dirección de un elemento, contando bytes
-#   p = this; do {...; p += 5;} while (p != this + 0x23)    pasa a  for (i < 7) con this->array_0x0[i].field_0x8
-#   Camera::Init(this), dentro de Camera    pasa a  Init()
-#   uint * A::A(void) {...; return this;}   pasa a  A::A(void) {...}: un constructor no tiene tipo
-#   0x3f800000                       pasa a  1.0f, si como float es redondo y tiene más de un bit a 1
-# Los nombres env y vm salen de cómo se usa cada variable, así que conviene revisar el resultado.
+#   this + arg2 * 0x14               pasa a  &this->array_0x0[arg2]: la
+#                                            dirección de un elemento, contando
+#                                            bytes
+#   p = this; do {...; p += 5;} while (p != this + 0x23)  pasa a  for (i < 7)
+#   con this->array_0x0[i].field_0x8
+#   Camera::Init(this), dentro de Camera  pasa a  Init()
+#   uint * A::A(void) {...; return this;}  pasa a  A::A(void) {...}: un
+#                                            constructor no tiene tipo
+#   0x3f800000                       pasa a  1.0f, si como float es redondo y
+#                                            tiene más de un bit a 1
+# Los nombres env y vm salen de cómo se usa cada variable, así que conviene
+# revisar el resultado.
 import argparse
 import os
 import re
@@ -104,11 +186,13 @@ import subprocess
 import sys
 
 HERE = os.path.dirname(os.path.abspath(__file__))
-DEFAULT_NAMES = os.path.join(HERE, "..", "src", "android", "jni_names.h")
+DEFAULT_NAMES = os.path.join(HERE, "..", "src", "android_emu", "jni_names.h")
 DEFAULT_RULES = "rules.txt"
-SO_BASE = 0x60800000   # donde el loader carga el .so: 0x60000000 + 8 MiB de stack
+SO_BASE = 0x60800000   # donde el loader carga el .so: 0x60000000 + 8 MiB de
+                       # stack
 
-# JavaVM comparte offsets con JNI. Se distinguen por el número de argumentos, con vm incluido.
+# JavaVM comparte offsets con JNI. Se distinguen por el número de argumentos,
+# con vm incluido.
 VM_CALLS = {0x0c: ("DestroyJavaVM", 1), 0x10: ("AttachCurrentThread", 3), 0x14: ("DetachCurrentThread", 1),
             0x18: ("GetEnv", 3), 0x1c: ("AttachCurrentThreadAsDaemon", 3)}
 INDIRECT = re.compile(r"\(\*\*\(\*([\w\[\]]+) \+ (0x[0-9a-f]+)\)\)\(")
@@ -148,7 +232,8 @@ ELEMENT_SIZES = {"uint": 4, "int": 4, "int32_t": 4, "uint32_t": 4, "float": 4, "
 FIELD = re.compile(r"\*\((?!p+[a-zA-Z]*Var\d)([A-Za-z_][\w:]*(?:->field_0x[0-9a-f]+)*) \+ (0x[0-9a-f]+|\d+)\)")
 GUESSED_TYPE = re.compile(r"(?:u?int(?:8|16|32)_t|u?int|u?short|u?char|u?long|byte|undefined\d?)")
 R_ARM_ABS32, R_ARM_GLOB_DAT, R_ARM_JUMP_SLOT, R_ARM_RELATIVE = 2, 21, 22, 23
-# Las funciones que el kernel de Linux ofrece a los programas ARM, en direcciones fijas.
+# Las funciones que el kernel de Linux ofrece a los programas ARM, en
+# direcciones fijas.
 KUSER_HELPERS = {0xffff0f60: "__kuser_cmpxchg64", 0xffff0fa0: "__kuser_memory_barrier",
                  0xffff0fc0: "__kuser_cmpxchg", 0xffff0fe0: "__kuser_get_tls"}
 
@@ -175,7 +260,8 @@ def demangle_all(names):
 
 
 def split_types(text):
-    """Separa los tipos de una firma. Las comas dentro de <> o de () no separan nada."""
+    """Separa los tipos de una firma. Las comas dentro de <> o de () no separan
+    nada."""
     types, current, depth = [], "", 0
     for c in text:
         depth += (c in "<(") - (c in ">)")
@@ -190,17 +276,20 @@ def split_types(text):
 
 
 def squash(name):
-    """r2 cambia los símbolos a su manera. Sin signos ni guiones bajos, los dos nombres coinciden."""
+    """r2 cambia los símbolos a su manera. Sin signos ni guiones bajos, los dos
+    nombres coinciden."""
     return re.sub(r"\W|_", "", name)
 
 
 def function_key(real):
-    """squash quita la ~, así que A::A() y A::~A() tendrían la misma clave y uno pisaría al otro."""
+    """squash quita la ~, así que A::A() y A::~A() tendrían la misma clave y uno
+    pisaría al otro."""
     return ("~" if "~" in real.split("(")[0] else "") + squash(real)
 
 
 def constant_text(value):
-    """Si los bits son un float redondo, como 0.7, sale como float. Si no, en hexadecimal."""
+    """Si los bits son un float redondo, como 0.7, sale como float. Si no, en
+    hexadecimal."""
     bits = struct.pack("<I", value)
     number = struct.unpack("<f", bits)[0]
     if 1e-4 <= abs(number) <= 1e7:
@@ -211,34 +300,43 @@ def constant_text(value):
 
 
 def read_global(base, offset):
-    """Lo que se lee en una dirección conocida: &DAT_c2d64 con 4 da DAT_c2d68, y &g_x con 0 da g_x."""
+    """Lo que se lee en una dirección conocida: &DAT_c2d64 con 4 da DAT_c2d68, y
+    &g_x con 0 da g_x."""
     if base and base.startswith("&DAT_"):
         return f"DAT_{int(base[5:], 16) + offset:x}"
     return base[1:] if base and base.startswith("&") and not offset else None
 
 
 def stops_scan(code):
-    """Saltos, llamadas y el final de una función: hacia atrás, a partir de aquí ya no se sabe nada."""
+    """Saltos, llamadas y el final de una función: hacia atrás, a partir de aquí
+    ya no se sabe nada."""
     return (code >> 12 == 0b1101 or code >> 11 == 0b11100 or code >> 11 in (0b11101, 0b11110, 0b11111)
             or code & 0xFF00 == 0xBD00 or code & 0xFF87 == 0x4700)
 
 
 def writes_register(code, register):
-    """¿Esta instrucción Thumb cambia este register (r0-r3)? Instrucciones que no conoce: se asume que sí."""
+    """¿Esta instrucción Thumb cambia este register (r0-r3)? Instrucciones que
+    no conoce: se asume que sí."""
     low, high = code & 7, (code >> 8) & 7
-    if code >> 13 == 0b000:                                  # offsets, add y sub de 3 operandos
+    # offsets, add y sub de 3 operandos
+    if code >> 13 == 0b000:
         return low == register
-    if code >> 13 == 0b001:                                  # mov, cmp, add y sub con inmediato
+    # mov, cmp, add y sub con inmediato
+    if code >> 13 == 0b001:
         return high == register and (code >> 11) & 3 != 1
-    if code >> 10 == 0b010000:                               # operaciones entre registers
+    # operaciones entre registers
+    if code >> 10 == 0b010000:
         return low == register and (code >> 6) & 15 not in (8, 10, 11)
-    if code >> 10 == 0b010001:                               # add, cmp y mov con registers altos
+    # add, cmp y mov con registers altos
+    if code >> 10 == 0b010001:
         return (code >> 8) & 3 != 1 and (code & 7 | (code >> 4) & 8) == register
     if code >> 11 == 0b01001:                                # ldr rd, [pc, #n]
         return high == register
-    if code >> 12 == 0b0101:                                 # ldr y str con register
+    # ldr y str con register
+    if code >> 12 == 0b0101:
         return low == register and (code >> 9) & 7 not in (0, 1, 2)
-    if code >> 13 == 0b011 or code >> 12 == 0b1000:          # ldr y str con offset
+    # ldr y str con offset
+    if code >> 13 == 0b011 or code >> 12 == 0b1000:
         return low == register and bool(code & 0x800)
     if code >> 12 == 0b1001:                                 # ldr y str con sp
         return high == register and bool(code & 0x800)
@@ -252,7 +350,8 @@ def writes_register(code, register):
 
 
 def copied_register(code):
-    """mov rd, rm o adds rd, rm, #0: de qué register se copia. None si no es una copia entre r0-r7."""
+    """mov rd, rm o adds rd, rm, #0: de qué register se copia. None si no es una
+    copia entre r0-r7."""
     if code >> 6 == 0b0001110000:                            # adds rd, rm, #0
         return (code >> 3) & 7
     if code >> 6 == 0:                                       # movs rd, rm
@@ -263,8 +362,8 @@ def copied_register(code):
 
 
 def read_symbols(library, imported=False):
-    """Los símbolos de .dynsym y .symtab definidos en el .so: (dirección, tamaño, tipo, nombre). Con imported,
-    los que el .so usa pero no define."""
+    """Los símbolos de .dynsym y .symtab definidos en el .so: (dirección,
+    tamaño, tipo, nombre). Con imported, los que el .so usa pero no define."""
     data = library.data
     shoff = struct.unpack_from("<I", data, 32)[0]
     shentsize, shnum = struct.unpack_from("<HH", data, 46)
@@ -284,7 +383,8 @@ def read_symbols(library, imported=False):
 
 
 class Library:
-    """Lo que hace falta del .so: sus segmentos, sus símbolos y a qué apunta cada entrada de la GOT."""
+    """Lo que hace falta del .so: sus segmentos, sus símbolos y a qué apunta
+    cada entrada de la GOT."""
 
     def __init__(self, path):
         self.data = open(path, "rb").read()
@@ -307,17 +407,20 @@ class Library:
         self.read_names()
 
     def read_names(self):
-        """Los nombres reales: dan los tipos de cada función y el nombre de cada global."""
+        """Los nombres reales: dan los tipos de cada función y el nombre de cada
+        global."""
         symbols = read_symbols(self)
         names = sorted(symbols)
         for name, real in zip(names, demangle_all(names)):
             value, size, kind = symbols[name]
-            if kind == 2 and value & 1:   # solo se leen las instrucciones de las funciones Thumb
+            if kind == 2 and value & 1:   # solo se leen las instrucciones de
+                                          # las funciones Thumb
                 self.addresses[name] = value & ~1
                 self.sizes[value & ~1] = size
             if kind == 1:   # STT_OBJECT
                 self.globals[value] = real
-            elif kind == 2:   # STT_FUNC. El bit 0 de la dirección solo indica Thumb.
+            elif kind == 2:   # STT_FUNC. El bit 0 de la dirección solo indica
+                              # Thumb.
                 if "(" not in real:
                     self.functions[function_key(real)] = (real, None, value & ~1)
                 elif "<" not in real.split("(")[0]:
@@ -325,7 +428,8 @@ class Library:
                     short = "::".join(head.split("::")[-2:])
                     self.functions[function_key(real)] = (short, split_types(rest.rsplit(")", 1)[0]), value & ~1)
         imported = sorted(read_symbols(self, True))
-        for real in demangle_all(imported):   # sin dirección: en el .so solo está su nombre
+        for real in demangle_all(imported):   # sin dirección: en el .so solo
+                                              # está su nombre
             if "(" in real and "<" not in real.split("(")[0]:
                 head, rest = real.split("(", 1)
                 self.functions.setdefault(function_key(real), ("::".join(head.split("::")[-2:]), split_types(rest.rsplit(")", 1)[0]), None))
@@ -333,8 +437,9 @@ class Library:
                 self.functions.setdefault(function_key(real), (real, None, None))
 
     def function(self, symbol):
-        """method.A::B.m_int_ o sym.m_int_: el nombre corto, los tipos y la dirección, si está en el .so.
-        class.X no dice qué método es: radare2 se lo pone al primero de esa clase, por dirección."""
+        """method.A::B.m_int_ o sym.m_int_: el nombre corto, los tipos y la
+        dirección, si está en el .so. class.X no dice qué método es: radare2 se
+        lo pone al primero de esa clase, por dirección."""
         if symbol.startswith("class."):
             name = symbol[6:].split("::")[-1]
             found = [item for item in self.functions.values() if item[0].startswith(f"{name}::") and item[2]]
@@ -349,8 +454,9 @@ class Library:
         return None if offset is None else struct.unpack_from("<H", self.data, offset)[0]
 
     def literal_pc(self, literal, hint):
-        """El pc que se suma a un literal: el de add rd, pc tras el ldr rd, [pc, #n] que lo lee. A veces Ghidra
-        escribe solo los 16 bits bajos, con signo: -0x948 en lugar de 0x2f6b8. hint es lo que escribió, y sus 16
+        """El pc que se suma a un literal: el de add rd, pc tras el ldr rd, [pc,
+        #n] que lo lee. A veces Ghidra escribe solo los 16 bits bajos, con
+        signo: -0x948 en lugar de 0x2f6b8. hint es lo que escribió, y sus 16
         bits bajos tienen que coincidir con los del pc encontrado."""
         found = set()
         for address in range(max(literal - 1020, 0) & ~1, literal, 2):
@@ -359,15 +465,18 @@ class Library:
                 continue
             register = (code >> 8) & 7
             for later in range(address + 2, min(address + 40, literal), 2):
-                if self.halfword(later) == 0x4478 | register:              # add rd, pc
+                # add rd, pc
+                if self.halfword(later) == 0x4478 | register:
                     found.add(later + 4)
                     break
         matching = [pc for pc in found if (pc - hint) & 0xFFFF == 0]
         return matching[0] if len(matching) == 1 else None
 
     def plt_target(self, address):
-        """Si address es una entrada de la PLT, la función a la que salta. Si no, la misma dirección."""
-        entry = address + 4 if self.halfword(address) == 0x4778 else address   # bx pc: la entrada es ARM
+        """Si address es una entrada de la PLT, la función a la que salta. Si
+        no, la misma dirección."""
+        # bx pc: la entrada es ARM
+        entry = address + 4 if self.halfword(address) == 0x4778 else address
         words = [self.word(entry + i * 4) for i in range(3)]
         if None in words or [word & 0xFFFFF000 for word in words] != [0xE28FC000, 0xE28CC000, 0xE5BCF000]:
             return address
@@ -379,18 +488,21 @@ class Library:
         return self.addresses.get(self.slots.get(slot), address)
 
     def calls_at(self, address):
-        """La llamada bl o blx que hay en address: [(dónde, a qué función)], o una lista vacía."""
+        """La llamada bl o blx que hay en address: [(dónde, a qué función)], o
+        una lista vacía."""
         first, second = self.halfword(address), self.halfword(address + 2)
         if first is None or second is None or first >> 11 != 0b11110 or second >> 11 not in (0b11111, 0b11101):
             return []
         offset = (first & 0x7FF) << 12 | (second & 0x7FF) << 1
         target = address + 4 + (offset - 0x800000 if offset & 0x400000 else offset)
-        if second >> 11 == 0b11101:   # blx: pasa a ARM, a una dirección aligned a 4
+        if second >> 11 == 0b11101:   # blx: pasa a ARM, a una dirección aligned
+                                      # a 4
             target &= ~3
         return [(address, self.plt_target(target))]
 
     def calls_in(self, start):
-        """Las llamadas bl y blx de una función Thumb con símbolo: [(dónde, a qué función)]."""
+        """Las llamadas bl y blx de una función Thumb con símbolo: [(dónde, a
+        qué función)]."""
         calls, address, end = [], start, start + self.sizes.get(start, 0)
         while address + 4 <= end:
             found = self.calls_at(address)
@@ -399,7 +511,8 @@ class Library:
         return calls
 
     def data_in(self, start):
-        """Las direcciones de una función que son datos: literales y tablas de switch. None si no se sabe."""
+        """Las direcciones de una función que son datos: literales y tablas de
+        switch. None si no se sabe."""
         data, address, end = set(), start, start + self.sizes.get(start, 0)
         helpers = {self.addresses.get(f"__gnu_thumb1_case_{kind}"): size
                    for kind, size in (("sqi", 1), ("uqi", 1), ("shi", 2), ("uhi", 2), ("si", 4))}
@@ -409,14 +522,16 @@ class Library:
                 return None
             if address in data:
                 address += 2
-            elif code >> 11 == 0b01001:                     # ldr rd, [pc, #n]: el literal es un dato
+            elif code >> 11 == 0b01001:
+                # ldr rd, [pc, #n]: el literal es un dato
                 where = ((address + 4) & ~3) + (code & 255) * 4
                 data.update((where, where + 2))
                 address += 2
             elif second is not None and code >> 11 == 0b11110 and second >> 11 in (0b11111, 0b11101):
                 target = [found for where, found in self.calls_at(address) if where == address]
                 size = helpers.get(target[0]) if target else None
-                if size:                                    # bl __gnu_thumb1_case_sqi: la tabla va detrás
+                # bl __gnu_thumb1_case_sqi: la tabla va detrás
+                if size:
                     compare = next((self.halfword(address - i) for i in range(2, 14, 2)
                                     if (self.halfword(address - i) or 0) >> 11 == 0b00101), None)
                     if compare is None:
@@ -429,17 +544,20 @@ class Library:
         return data
 
     def only_write(self, register, start):
-        """La única instrucción de una función que cambia este register. None si hay más, o no se sabe."""
+        """La única instrucción de una función que cambia este register. None si
+        hay más, o no se sabe."""
         data = self.data_in(start)
         if data is None:
             return None
         found, address, end = [], start, start + self.sizes.get(start, 0)
         while address + 2 <= end:
             code, second = self.halfword(address), self.halfword(address + 2)
-            if address in data or code & 0xFE00 == 0xBC00:  # un pop solo restaura el valor al salir
+            # un pop solo restaura el valor al salir
+            if address in data or code & 0xFE00 == 0xBC00:
                 address += 2
             elif second is not None and code >> 11 == 0b11110 and second >> 11 in (0b11111, 0b11101):
-                address += 4                                # una llamada conserva r4-r7
+                # una llamada conserva r4-r7
+                address += 4
             else:
                 if writes_register(code, register):
                     found.append(address)
@@ -447,10 +565,13 @@ class Library:
         return found[0] if len(found) == 1 else None
 
     def register_before(self, address, register, start):
-        """Lo que hay en un register antes de address, como texto, si lo dicen las instrucciones anteriores.
-        Se mira hacia atrás hasta un salto o una llamada: más allá ya no se sabría por dónde se llegó. Si se
-        llega al principio sin que nada lo cambie, es un parámetro: devuelve param:N."""
-        pc_plus = None   # con add rd, pc: lo que hay que sumar a lo que se lea después
+        """Lo que hay en un register antes de address, como texto, si lo dicen
+        las instrucciones anteriores.
+        Se mira hacia atrás hasta un salto o una llamada: más allá ya no se
+        sabría por dónde se llegó. Si se llega al principio sin que nada lo
+        cambie, es un parámetro: devuelve param:N."""
+        pc_plus = None   # con add rd, pc: lo que hay que sumar a lo que se lea
+                         # después
         for _ in range(64):
             address -= 2
             if address < start:
@@ -460,22 +581,28 @@ class Library:
                 return None
             if not writes_register(code, register):
                 continue
-            if code & 0xFF78 == 0x4478 and pc_plus is None:                 # add rd, pc
+            # add rd, pc
+            if code & 0xFF78 == 0x4478 and pc_plus is None:
                 pc_plus = address + 4
-            elif code >> 11 == 0b01001:                                     # ldr rd, [pc, #n]
+            elif code >> 11 == 0b01001:
+                # ldr rd, [pc, #n]
                 where = ((address + 4) & ~3) + (code & 255) * 4
                 word = self.word(where)
                 if pc_plus is not None:
                     return None if word is None else self.address_text((word + pc_plus) & 0xFFFFFFFF)
                 return self.slot_text(where) or (None if word is None else constant_text(word))
-            elif code >> 11 == 0b00100 and pc_plus is None:                 # movs rd, #n
+            elif code >> 11 == 0b00100 and pc_plus is None:
+                # movs rd, #n
                 return str(code & 255) if code & 255 < 10 else hex(code & 255)
-            elif code >> 11 == 0b01101 and pc_plus is None:                 # ldr rd, [rn, #n]
+            elif code >> 11 == 0b01101 and pc_plus is None:
+                # ldr rd, [rn, #n]
                 base = self.register_before(address, (code >> 3) & 7, start)
                 offset = ((code >> 6) & 31) * 4
                 slot = self.slot_text(int(base[5:], 16) + offset) if base and base.startswith("&DAT_") else None
-                return slot or read_global(base, offset)                    # una entrada de la GOT da una dirección
-            elif code >> 9 == 0b0101100 and pc_plus is None:                # ldr rd, [rn, rm]: la GOT
+                # una entrada de la GOT da una dirección
+                return slot or read_global(base, offset)
+            elif code >> 9 == 0b0101100 and pc_plus is None:
+                # ldr rd, [rn, rm]: la GOT
                 base = self.register_before(address, (code >> 3) & 7, start)
                 index = self.register_before(address, (code >> 6) & 7, start)
                 if base and index and base.startswith("&DAT_") and index.startswith("0x"):
@@ -485,7 +612,8 @@ class Library:
                 source = copied_register(code)
                 if source < 4:
                     return self.register_before(address, source, start)
-                # r4-r7 sobreviven a las llamadas: vale lo que se le asignó, si solo se asigna una vez.
+                # r4-r7 sobreviven a las llamadas: vale lo que se le asignó, si
+                # solo se asigna una vez.
                 write = self.only_write(source, start)
                 return None if write is None else self.register_before(write + 2, source, start)
             else:
@@ -493,8 +621,9 @@ class Library:
         return None
 
     def call_argument(self, caller, callee, register, order=None):
-        """El argumento de una llamada de caller a callee. Con varias, solo si se sabe cuál es: order es su
-        posición entre las del pseudocode y cuántas hay, y tienen que ser las mismas que en las instrucciones."""
+        """El argumento de una llamada de caller a callee. Con varias, solo si
+        se sabe cuál es: order es su posición entre las del pseudocode y cuántas
+        hay, y tienen que ser las mismas que en las instrucciones."""
         found = sorted(where for where, target in self.calls_in(caller) if target == callee)
         if len(found) == 1:
             return self.register_before(found[0], register, caller)
@@ -510,7 +639,8 @@ class Library:
         return f'"{string}"' if string else f"&DAT_{address:x}"
 
     def word_text(self, address):
-        """Lo que da leer *0x515f0: una dirección reubicada, una global si se puede escribir, o una constante."""
+        """Lo que da leer *0x515f0: una dirección reubicada, una global si se
+        puede escribir, o una constante."""
         if address in self.slots:
             return self.slot_text(address)
         if self.is_writable(address):
@@ -539,13 +669,15 @@ class Library:
         return raw.decode("ascii").replace("\n", "\\n").replace("\t", "\\t").replace("\r", "\\r")
 
     def read_slots(self, dynamic):
-        """Las relocations: qué recibirá cada palabra al cargar el .so, símbolo o dirección."""
+        """Las relocations: qué recibirá cada palabra al cargar el .so, símbolo
+        o dirección."""
         tags = {}
         for i in range(dynamic[1] // 8):
             tag, value = struct.unpack_from("<2I", self.data, dynamic[0] + i * 8)
             tags[tag] = value
         slots = {}
-        for table, size in ((tags.get(17), tags.get(18, 0)), (tags.get(23), tags.get(2, 0))):   # DT_REL y DT_JMPREL
+        # DT_REL y DT_JMPREL
+        for table, size in ((tags.get(17), tags.get(18, 0)), (tags.get(23), tags.get(2, 0))):
             start = self.file_offset(table) if table else None
             if start is None:
                 continue
@@ -571,7 +703,8 @@ class Library:
 
 
 def read_addresses(text, library):
-    """*(&DAT_bcb6c) lee esa palabra. Si es una entrada de la GOT, lo leído es la dirección de una global."""
+    """*(&DAT_bcb6c) lee esa palabra. Si es una entrada de la GOT, lo leído es
+    la dirección de una global."""
     def read(match):
         return library.slot_text(int(match.group(1), 16)) or f"DAT_{match.group(1)}"
     text = re.sub(r"\*\(&DAT_([0-9a-f]+)\)", read, text)
@@ -579,22 +712,25 @@ def read_addresses(text, library):
 
 
 def resolve_literals(text, library):
-    """*0xA + 0xB es una lectura relativa a pc: la palabra de A más B da la dirección de un dato. Si B no es el pc
-    entero, como el -0x948 de 0x2f6b8, se busca el de verdad en las instrucciones."""
+    """*0xA + 0xB es una lectura relativa a pc: la palabra de A más B da la
+    dirección de un dato. Si B no es el pc entero, como el -0x948 de 0x2f6b8, se
+    busca el de verdad en las instrucciones."""
     def replace(match):
         literal, pc = int(match.group(1), 16), int(match.group(2), 16)
         word = library.word(literal)
         real = library.literal_pc(literal, pc) if word is not None else None
-        if word is None or (pc < 0 and real is None):     # un pc no es negativo: sin comprobarlo, no se toca
+        # un pc no es negativo: sin comprobarlo, no se toca
+        if word is None or (pc < 0 and real is None):
             return match.group(0)
         return library.address_text((word + (pc if real is None else real)) & 0xFFFFFFFF)
     return read_addresses(LITERAL.sub(replace, text), library)
 
 
 def resolve_split_literals(text, library):
-    """iVar1 = *0x517a4; ... iVar1 + 0x5170c es lo mismo que *0x517a4 + 0x5170c, en dos líneas. El pc tiene
-    que estar cerca del literal: si no, es una suma normal. La variable puede reutilizarse después, así que
-    cada literal solo vale hasta la siguiente asignación."""
+    """iVar1 = *0x517a4; ... iVar1 + 0x5170c es lo mismo que *0x517a4 + 0x5170c,
+    en dos líneas. El pc tiene que estar cerca del literal: si no, es una suma
+    normal. La variable puede reutilizarse después, así que cada literal solo
+    vale hasta la siguiente asignación."""
     lines, current, used = text.split("\n"), {}, set()
     for index, line in enumerate(lines):
         for variable, (literal, word, start) in list(current.items()):
@@ -613,7 +749,8 @@ def resolve_split_literals(text, library):
             for variable in list(current):
                 if re.match(rf"[ \t]*{variable} = ", line):
                     del current[variable]
-    # Quita el literal si, hasta la siguiente asignación, ya nadie lee esa variable.
+    # Quita el literal si, hasta la siguiente asignación, ya nadie lee esa
+    # variable.
     names = set()
     for start in sorted(used, reverse=True):
         variable = lines[start].split("=")[0].strip()
@@ -633,14 +770,16 @@ def resolve_split_literals(text, library):
 
 
 def resolve_words(text, library):
-    """*0x515f0 lee una palabra del .so, normalmente una constante que no cabe en una instrucción."""
+    """*0x515f0 lee una palabra del .so, normalmente una constante que no cabe
+    en una instrucción."""
     def replace(match):
         return library.word_text(int(match.group(1), 16)) or match.group(0)
     return re.sub(r"(?<![\w)\]*])\*0x([0-9a-f]+)\b", replace, text)
 
 
 def read_rule_symbols(path):
-    """Las reglas symbol NOMBRE LUGAR de un fichero: {posición dentro del .so: nombre}."""
+    """Las reglas symbol NOMBRE LUGAR de un fichero: {posición dentro del .so:
+    nombre}."""
     found = {}
     with open(path, encoding="utf-8") as rules:
         for line in rules:
@@ -657,13 +796,15 @@ def read_rule_symbols(path):
 
 
 def name_addresses(text, own, library):
-    """DAT_c2d4c y fcn.0002d2e8 llevan el nombre que les des con symbol. Un DAT_ sin regla lleva el del
-    símbolo del .so, si existe. Devuelve también cada nombre usado con su dirección."""
+    """DAT_c2d4c y fcn.0002d2e8 llevan el nombre que les des con symbol. Un DAT_
+    sin regla lleva el del símbolo del .so, si existe. Devuelve también cada
+    nombre usado con su dirección."""
     named = {}
 
     def replace(match):
         is_function, address = match.group(1) == "fcn.", int(match.group(2), 16)
-        name = own.get(address) or (own.get(address + 1) if is_function else None)   # +1: función Thumb
+        # +1: función Thumb
+        name = own.get(address) or (own.get(address + 1) if is_function else None)
         if not name and not is_function and library:
             name = library.globals.get(address)
         if not name:
@@ -674,7 +815,8 @@ def name_addresses(text, own, library):
 
 
 def resolve_kuser_helpers(text, library):
-    """pcVar1 = *0x9f938; lee una constante. Si es una función del kernel, la llamada lleva su nombre."""
+    """pcVar1 = *0x9f938; lee una constante. Si es una función del kernel, la
+    llamada lleva su nombre."""
     for variable, address in re.findall(r"\b(\w+) = \*0x([0-9a-f]+);", text):
         name = KUSER_HELPERS.get(library.word(int(address, 16)))
         if not name:
@@ -685,8 +827,9 @@ def resolve_kuser_helpers(text, library):
 
 
 def got_offset_variables(text, base_variable, base, library):
-    """iVar2 = 0x248; **(iVar3 + iVar2) = 0xf0;: el offset de la entrada está en otra variable. Vale el
-    de su última asignación, si entre medias no hay saltos ni loops."""
+    """iVar2 = 0x248; **(iVar3 + iVar2) = 0xf0;: el offset de la entrada está en
+    otra variable. Vale el de su última asignación, si entre medias no hay
+    saltos ni loops."""
     lines, used = text.split("\n"), {}
     for index, line in enumerate(lines):
         for match in re.finditer(rf"\*\({base_variable} \+ (\w+Var\d+)\)", line):
@@ -702,8 +845,9 @@ def got_offset_variables(text, base_variable, base, library):
             if slot:
                 lines[index] = lines[index].replace(match[0], slot, 1)
                 used[earlier] = match[1]
-    # iVar2 = 0x248; solo servía para llegar a la entrada. Si ya no queda ninguna por resolver con esa
-    # variable, sobra: un offset dentro de la GOT no es un dato del juego.
+    # iVar2 = 0x248; solo servía para llegar a la entrada. Si ya no queda
+    # ninguna por resolver con esa variable, sobra: un offset dentro de la GOT
+    # no es un dato del juego.
     text = "\n".join(lines)
     for earlier, variable in sorted(used.items(), reverse=True):
         if not re.search(rf"\*\({base_variable} \+ {variable}\)", text):
@@ -715,8 +859,9 @@ def got_offset_variables(text, base_variable, base, library):
 
 
 def resolve_got(text, library):
-    """iVar6 = DAT_bc6fc; es el inicio de la GOT. Una entrada se lee de dos formas: con el offset en
-    un literal, *(iVar6 + *0x32f78), o directamente, *(iVar6 + 0x4bc). Da la dirección de una global."""
+    """iVar6 = DAT_bc6fc; es el inicio de la GOT. Una entrada se lee de dos
+    formas: con el offset en un literal, *(iVar6 + *0x32f78), o directamente,
+    *(iVar6 + 0x4bc). Da la dirección de una global."""
     for variable, base in re.findall(r"\b(\w+) = &?DAT_([0-9a-f]+);", text):
         def replace(match):
             word = library.word(int(match.group(1), 16))
@@ -740,14 +885,16 @@ def resolve_got(text, library):
 def remove_if_unused(text, variable, assignment):
     """Quita la asignación y la declaración de una variable que ya nadie usa."""
     rest = re.sub(assignment, "", text)
-    if len(re.findall(rf"\b{variable}\b", rest)) <= 1:   # solo queda la declaración
+    # solo queda la declaración
+    if len(re.findall(rf"\b{variable}\b", rest)) <= 1:
         rest = re.sub(rf"^(?![ \t]*return\b)[ \t]*[\w ]+\*?\b{variable};\n", "", rest, flags=re.M)
         return rest
     return text
 
 
 def unwrap_lines(text):
-    """Ghidra parte las líneas largas: vuelve a unir lo que tiene los paréntesis sin cerrar."""
+    """Ghidra parte las líneas largas: vuelve a unir lo que tiene los paréntesis
+    sin cerrar."""
     lines, pending = [], None
     for line in text.split("\n"):
         if pending is not None:
@@ -766,7 +913,8 @@ def unwrap_lines(text):
 
 
 def reindent(text):
-    """Sangra cada línea según sus llaves, porque Ghidra deja de sangrar a partir de cierta profundidad."""
+    """Sangra cada línea según sus llaves, porque Ghidra deja de sangrar a
+    partir de cierta profundidad."""
     depth, lines = 0, []
     for line in text.split("\n"):
         stripped = line.strip()
@@ -781,7 +929,8 @@ def reindent(text):
 
 
 def split_call(text, start):
-    """Separa los argumentos de una llamada. start es la posición justo después del paréntesis."""
+    """Separa los argumentos de una llamada. start es la posición justo después
+    del paréntesis."""
     depth, quoted, args, current, i = 0, False, [], "", start
     while i < len(text):
         c = text[i]
@@ -807,7 +956,8 @@ def split_call(text, start):
 
 
 def find_call(text, position):
-    """Busca hacia atrás el paréntesis de la llamada. Da su posición y el índice del último argumento."""
+    """Busca hacia atrás el paréntesis de la llamada. Da su posición y el índice
+    del último argumento."""
     depth, index, quoted = 0, 1, False
     for i in range(position - 1, -1, -1):
         c = text[i]
@@ -827,19 +977,26 @@ def find_call(text, position):
 
 
 def is_leftover(argument, index, before_call):
-    """¿Este argumento solo aparece porque el valor seguía en un register o en el stack?"""
+    """¿Este argumento solo aparece porque el valor seguía en un register o en
+    el stack?"""
     pointer = re.fullmatch(r"\*\((\*[\w\[\]]+ \+ 0x[0-9a-f]+)\)", argument)
     if pointer:
-        return before_call.endswith(f"(**({pointer.group(1)}))")   # blx r3: r3 es la propia función
-    name = argument.rsplit(")", 1)[-1]                              # sin el cast
+        # blx r3: r3 es la propia función
+        return before_call.endswith(f"(**({pointer.group(1)}))")
+    # sin el cast
+    name = argument.rsplit(")", 1)[-1]
     if re.fullmatch(r"extraout_r[1-9]\d*", name):
-        return True                                                 # r1-r3 tras otra llamada
-    return index >= 4                                               # lo que guardó un push en el stack
+        # r1-r3 tras otra llamada
+        return True
+    # lo que guardó un push en el stack
+    return index >= 4
 
 
 def drop_leftovers(text):
-    """Ghidra no conoce la firma de una llamada por vtable, así que enseña los registers que no se tocan.
-    Solo se quitan del final: quitar uno del medio movería los argumentos que van detrás."""
+    """Ghidra no conoce la firma de una llamada por vtable, así que enseña los
+    registers que no se tocan.
+    Solo se quitan del final: quitar uno del medio movería los argumentos que
+    van detrás."""
     changed = True
     while changed:
         changed = False
@@ -849,14 +1006,17 @@ def drop_leftovers(text):
                 text = text[:match.start()] + text[match.end():]
                 changed = True
     for name in set(re.findall(rf"\b({LEFTOVER});\n", text)):
-        if len(re.findall(rf"\b{name}\b", text)) == 1:               # solo queda la declaración
+        # solo queda la declaración
+        if len(re.findall(rf"\b{name}\b", text)) == 1:
             text = re.sub(rf"^(?![ \t]*return\b)[ \t]*[\w ]+\*?\b{name};\n", "", text, flags=re.M)
     return text
 
 
 def uses_jni(text):
-    """Una llamada por tabla puede ser JNI o el método virtual de un objeto: tienen la misma forma.
-    Solo se trata como JNI si la función consigue un env con el JavaVM o es un método Java_."""
+    """Una llamada por tabla puede ser JNI o el método virtual de un objeto:
+    tienen la misma forma.
+    Solo se trata como JNI si la función consigue un env con el JavaVM o es un
+    método Java_."""
     if "Java_" in text or re.search(r"\b_JNIEnv\s*\*", text):
         return True
     for match in INDIRECT.finditer(text):
@@ -902,7 +1062,8 @@ def name_calls(text, names, force_jni=False):
 
 
 def clean_symbol(symbol):
-    """method.A::B.m_int_ pasa a B::m, sym.A::B::_B____1 a B::~B, sym.imp.memset a memset y class.A a A::A."""
+    """method.A::B.m_int_ pasa a B::m, sym.A::B::_B____1 a B::~B, sym.imp.memset
+    a memset y class.A a A::A."""
     if symbol.startswith("class."):
         name = symbol[6:].split("::")[-1]
         return f"{name}::{name}"
@@ -912,7 +1073,8 @@ def clean_symbol(symbol):
         return f"{owner}::~{owner}"
     if "." in name:
         owner, method = name.split(".", 1)
-        return f"{owner.split('::')[-1]}::{method.split('_')[0]}"   # r2 añade los tipos detrás
+        # r2 añade los tipos detrás
+        return f"{owner.split('::')[-1]}::{method.split('_')[0]}"
     parts = name.split("::")
     if len(parts) >= 2:
         last = parts[-1]
@@ -923,7 +1085,8 @@ def clean_symbol(symbol):
 
 
 def name_methods(text, library=None):
-    """Da nombre a las llamadas y apunta los tipos y la dirección de cada función que se llama."""
+    """Da nombre a las llamadas y apunta los tipos y la dirección de cada
+    función que se llama."""
     called, targets = {}, {}
 
     def rewrite(text):
@@ -936,18 +1099,22 @@ def name_methods(text, library=None):
             args = [rewrite(arg) for arg in args]
             symbol = match.group(0)
             name, types, address = (library and library.function(symbol)) or (clean_symbol(symbol), None, None)
-            called[name] = types if called.get(name, types) == types else None   # None si hay sobrecargas
-            if address and not name.startswith("__"):   # los __aeabi_ y similares son del compilador
+            # None si hay sobrecargas
+            called[name] = types if called.get(name, types) == types else None
+            # los __aeabi_ y similares son del compilador
+            if address and not name.startswith("__"):
                 label = name if types is None else f"{name}({', '.join(types)})"
                 targets.setdefault(name, {})[address] = label
             result += text[position:match.start()]
             before = text[text.rfind("\n", 0, match.start()) + 1:match.start()]
-            if re.fullmatch(r"\w[\w *]*[ *]", before) and not before.startswith("return"):   # es el header
+            # es el header
+            if re.fullmatch(r"\w[\w *]*[ *]", before) and not before.startswith("return"):
                 result += f"{name}({','.join(args)})"
             elif name.startswith("_JNIEnv::"):
                 missing = [f"/* {kind.strip('_*')} */" for kind in (types or ())[len(args) - 1:]]
                 result += f"env->{name.split('::')[1]}({','.join(args[1:] + missing)})"
-            elif types and len(args) < len(types):              # Ghidra no ve lo que sigue en el register
+            elif types and len(args) < len(types):
+                # Ghidra no ve lo que sigue en el register
                 missing = [f"/* {kind} */" for kind in types[len(args):] if kind != "..."]
                 result += f"{name}({','.join(args + missing)})"
             else:
@@ -957,8 +1124,8 @@ def name_methods(text, library=None):
 
 
 def apply_renames(text, renames):
-    # piStack_24 y &stack0xffffffdc son la misma variable: -0x24 = 0xffffffdc. Ghidra también puede
-    # verla como un array, apiStack_1c[0].
+    # piStack_24 y &stack0xffffffdc son la misma variable: -0x24 = 0xffffffdc.
+    # Ghidra también puede verla como un array, apiStack_1c[0].
     for variable in list(renames):
         found = re.search(r"Stack_([0-9a-f]+)(?:\[0\])?$", variable)
         if found:
@@ -966,7 +1133,8 @@ def apply_renames(text, renames):
             text = re.sub(rf"\bstack0x{offset:08x}\b", variable, text)
     for variable, name in renames.items():
         text = re.sub(rf"(?<!\w){re.escape(variable)}(?!\w)", name, text)
-        # int *apiStack_1c [2]; pasa a int *env;, si no se usa ninguna otra posición.
+        # int *apiStack_1c [2]; pasa a int *env;, si no se usa ninguna otra
+        # posición.
         base = variable.split("[")[0]
         if variable.endswith("[0]") and f"{base}[" not in text:
             text = re.sub(rf"\b{base} \[\d+\];", f"{name};", text)
@@ -974,8 +1142,10 @@ def apply_renames(text, renames):
 
 
 def clean_stack(text):
-    """Un solo nombre para cada variable del stack: local_18 es la que está en sp - 0x18."""
-    # iVar1 = &stack0xfffffff0; hace que iVar1 + -8 sea la dirección de otra variable.
+    """Un solo nombre para cada variable del stack: local_18 es la que está en
+    sp - 0x18."""
+    # iVar1 = &stack0xfffffff0; hace que iVar1 + -8 sea la dirección de otra
+    # variable.
     for variable, frame in re.findall(r"\b(\w+) = &stack0x([0-9a-f]{8});", text):
         top = int(frame, 16)
 
@@ -992,13 +1162,15 @@ def clean_stack(text):
 
 
 def join_doubles(text):
-    """printf(f, v, v >> 0x20): un double ocupa dos registers, y Ghidra enseña cada mitad. Es un solo valor."""
+    """printf(f, v, v >> 0x20): un double ocupa dos registers, y Ghidra enseña
+    cada mitad. Es un solo valor."""
     return re.sub(r"\b(\w+Var\d+),\s*\1 >> 0x20\b", r"\1", text)
 
 
 def clean_switches(text):
-    """__gnu_thumb1_case_sqi es un switch con su tabla justo detrás de la llamada, y Ghidra lee esa tabla
-    como instrucciones. Thumb-1 no tiene registers VFP, así que lo que los usa sale de la tabla."""
+    """__gnu_thumb1_case_sqi es un switch con su tabla justo detrás de la
+    llamada, y Ghidra lee esa tabla como instrucciones. Thumb-1 no tiene
+    registers VFP, así que lo que los usa sale de la tabla."""
     if "__gnu_thumb1_case_" not in text:
         return text
     text = SWITCH_CALL.sub(r"\1// unresolved switch: what follows may not be real", text)
@@ -1014,7 +1186,8 @@ def each_function(text, fix):
 
 
 def fix_signature(header, body):
-    """//A::m(char const*) es la firma real: da los tipos y deja ver qué parámetro es this."""
+    """//A::m(char const*) es la firma real: da los tipos y deja ver qué
+    parámetro es this."""
     short = re.escape(header["name"].split("::")[-1])
     comment = re.search(rf"^[ \t]*//\s*((?:[\w~]+::)*{short}\w*)\((.*?)\)(?: const)?[ \t]*\n", body, re.M)
     if not comment:
@@ -1023,15 +1196,17 @@ def fix_signature(header, body):
     if len(found) not in (len(real), len(real) + 1):
         if len(found) <= len(real) + 1 or "::" not in comment[1]:
             return header[0] + body
-        # Ghidra ve más parámetros de los que tiene el método. Los que sobran son registers que nadie pasó,
-        # como un s1 en un .so sin VFP: se tratan como valores desconocidos.
+        # Ghidra ve más parámetros de los que tiene el método. Los que sobran
+        # son registers que nadie pasó, como un s1 en un .so sin VFP: se tratan
+        # como valores desconocidos.
         for extra in found[len(real) + 1:]:
             body = re.sub(rf"\b{extra.split()[-1].lstrip('*')}\b", "unknown_register", body)
         found = found[:len(real) + 1]
     body = body[:comment.start()] + body[comment.end():]
     first = found[0].split()[-1].lstrip("*") if found else None
-    # Con el mismo número, el primero solo puede ser this si se usa como pointer y su tipo no lo es: Ghidra no
-    # enseña un parámetro que no se usa, como el float de update(float).
+    # Con el mismo número, el primero solo puede ser this si se usa como pointer
+    # y su tipo no lo es: Ghidra no enseña un parámetro que no se usa, como el
+    # float de update(float).
     missing_this = (found and "::" in comment[1] and not re.search(r"\*|&", real[0] if real else "*")
                     and re.search(rf"\*\(?{first}\b", body))
     has_this = len(found) > len(real) or bool(missing_this)
@@ -1047,22 +1222,25 @@ def fix_signature(header, body):
     return f"{header['type']}{comment[1]}({params})" + body
 
 
-CALLEE = r"(?:[\w:]+::)?operator[^\w\s(]{1,3}|[\w:]+"   # el nombre de una función, también operator+
+# el nombre de una función, también operator+
+CALLEE = r"(?:[\w:]+::)?operator[^\w\s(]{1,3}|[\w:]+"
 FAKE_REGISTER = r"\b(?:unknown_register|(?:extraout|in|unaff)_[sdq]\d+(?:_\d+)?)\b"
 
 
 def fake_registers(header, body):
-    """extraout_s1 en un .so de Thumb-1 no existe: ese .so no tiene registers VFP. Ghidra lo enseña cuando se
-    equivoca con la firma de una función. Como argumento, lo que de verdad se pasa es el register normal de esa
-    posición, y se marca para leerlo de las instrucciones: f(x, extraout_s1) pasa a f(x, /* r1 */). Las
-    asignaciones de esos valores no significan nada y se quitan."""
+    """extraout_s1 en un .so de Thumb-1 no existe: ese .so no tiene registers
+    VFP. Ghidra lo enseña cuando se equivoca con la firma de una función. Como
+    argumento, lo que de verdad se pasa es el register normal de esa posición, y
+    se marca para leerlo de las instrucciones: f(x, extraout_s1) pasa a f(x, /*
+    r1 */). Las asignaciones de esos valores no significan nada y se quitan."""
     if not re.search(FAKE_REGISTER, body):
         return header[0] + body
     fake = FAKE_REGISTER
     for name in set(re.findall(rf"\b(\w+Var\d+) = {FAKE_REGISTER}", body)):
         values = re.findall(rf"(?<![\w*]){name} = ([^,;)]+)", body)
         if all(re.fullmatch(FAKE_REGISTER, value.strip()) for value in values):
-            fake += rf"|\b{name}\b"                   # uVar6 = extraout_s1: uVar6 tampoco existe
+            # uVar6 = extraout_s1: uVar6 tampoco existe
+            fake += rf"|\b{name}\b"
     fake = rf"(?:{fake})"
     body = re.sub(rf"^[ \t]*\w+ = {fake};\n", "", body, flags=re.M)
     body = re.sub(rf",\s*\w+ = {fake}(?=[,)])|\b\w+ = {fake},\s*", "", body)
@@ -1088,15 +1266,17 @@ def fake_registers(header, body):
     return header[0] + body
 
 
-# Dónde va el formato en cada función tipo printf: lo que lo sigue lo pide el propio formato.
+# Dónde va el formato en cada función tipo printf: lo que lo sigue lo pide el
+# propio formato.
 FORMAT_POSITION = {"printf": 0, "sprintf": 1, "snprintf": 2, "fprintf": 1, "__android_log_print": 2}
 FORMAT_CALL = re.compile(r"(?<![\w:.>])(" + "|".join(FORMAT_POSITION) + r")\(")
 SPECIFIER = re.compile(r"%(?:%|[-+ #0]*(\*|\d+)?(?:\.(\*|\d+))?(?:hh|h|ll|l|L|q|j|z|t)?[diouxXeEfFgGaAcspn])")
 
 
 def format_arguments(text):
-    """printf("x=%d"): Ghidra no conoce la firma, así que no enseña lo que pide el formato. Ese valor va en el
-    register siguiente: printf("x=%d", /* r1 */)."""
+    """printf("x=%d"): Ghidra no conoce la firma, así que no enseña lo que pide
+    el formato. Ese valor va en el register siguiente: printf("x=%d", /* r1
+    */)."""
     lines = text.split("\n")
     for index, line in enumerate(lines):
         position = 0
@@ -1121,13 +1301,15 @@ def format_arguments(text):
 
 
 def call_order(body, callee, line_number, column):
-    """El orden de una llamada entre las que van a la misma función: (número, total). Solo vale si el texto
-    sigue el orden de las instrucciones: todas en el nivel de arriba, sin saltos, loops ni else."""
+    """El orden de una llamada entre las que van a la misma función: (número,
+    total). Solo vale si el texto sigue el orden de las instrucciones: todas en
+    el nivel de arriba, sin saltos, loops ni else."""
     if re.search(r"\bgoto\b|^\s*\w+:$|\b(?:while|for|switch|else)\b|\bdo \{", body, re.M):
         return None
     found = []
     for number, line in enumerate(body.split("\n")):
-        if line.lstrip().startswith("//"):          # el comentario con la dirección no es una llamada
+        # el comentario con la dirección no es una llamada
+        if line.lstrip().startswith("//"):
             continue
         for match in re.finditer(rf"(?<![\w:.>]){re.escape(callee)}\(", line):
             if line.startswith("        "):
@@ -1137,8 +1319,9 @@ def call_order(body, callee, line_number, column):
 
 
 def names_by_register(names, body, first_register):
-    """Si Ghidra llama noname_1 a un parámetro y arg1 al siguiente, dos pasarían a llamarse igual. Se renombran
-    todos por su register: arg2 es lo que entró en r2."""
+    """Si Ghidra llama noname_1 a un parámetro y arg1 al siguiente, dos pasarían
+    a llamarse igual. Se renombran todos por su register: arg2 es lo que entró
+    en r2."""
     new = [f"arg{first_register + i}" if re.fullmatch(r"noname_\d+|arg\d+", name) else name for i, name in enumerate(names)]
     for i, name in enumerate(names):
         body = re.sub(rf"\b{name}\b", f"\0{i}\0", body)
@@ -1150,8 +1333,9 @@ def remove_declaration(body, variable):
 
 
 def use_params(body, params):
-    """iVar2 = arg1; es arg1 con otro nombre, si ninguna de las dos cambia después. *p = 0 no cambia p. Si p apunta
-    a palabras, p[7] está en el byte 0x1c, y se escribe así para no mezclar las dos formas de contar."""
+    """iVar2 = arg1; es arg1 con otro nombre, si ninguna de las dos cambia
+    después. *p = 0 no cambia p. Si p apunta a palabras, p[7] está en el byte
+    0x1c, y se escribe así para no mezclar las dos formas de contar."""
     for variable, param in re.findall(r"^    (\w+Var\d+|arg\d+_\d+) = (\w+);\n", body, re.M):
         if (param in params and len(re.findall(rf"(?<![*\w]){variable} = ", body)) == 1
                 and not re.search(rf"(?<![*\w]){param} = ", body) and f"&{variable}" not in body):
@@ -1165,7 +1349,8 @@ def use_params(body, params):
 
 
 def inline_calls(body):
-    """piVar1 = f(); piVar1->g(); es f()->g(), si piVar1 solo se usa en la línea siguiente."""
+    """piVar1 = f(); piVar1->g(); es f()->g(), si piVar1 solo se usa en la línea
+    siguiente."""
     position = 0
     while True:
         match = ASSIGNED_CALL.search(body, position)
@@ -1185,8 +1370,10 @@ def inline_calls(body):
 
 
 def no_call_before(lines, index):
-    """1 si ninguna llamada ha podido ejecutarse antes de esta línea, así que r0-r3 siguen como al entrar.
-    Una etiqueta, un else o un loop dejan otros caminos sin ver, y entonces no se puede saber."""
+    """1 si ninguna llamada ha podido ejecutarse antes de esta línea, así que
+    r0-r3 siguen como al entrar.
+    Una etiqueta, un else o un loop dejan otros caminos sin ver, y entonces no
+    se puede saber."""
     i = index - 1
     while i >= 0:
         text = lines[i].strip()
@@ -1194,7 +1381,8 @@ def no_call_before(lines, index):
             return 0
         if text == "}":
             before = next((lines[j].strip() for j in range(i - 1, -1, -1) if lines[j].strip()), "")
-            # Un bloque que no sigue hacia abajo no llega hasta aquí: se salta entero.
+            # Un bloque que no sigue hacia abajo no llega hasta aquí: se salta
+            # entero.
             if re.match(r"goto\b|return\b|// unresolved switch", before):
                 closing = lines[i].index("}")
                 i -= 1
@@ -1208,7 +1396,8 @@ def no_call_before(lines, index):
 
 
 def argument_text(header, value):
-    """param:1 es lo que entró en r1. En una función libre es el parámetro de esa posición."""
+    """param:1 es lo que entró en r1. En una función libre es el parámetro de
+    esa posición."""
     if not value or not value.startswith("param:"):
         return value
     params = split_types(header["params"])
@@ -1219,9 +1408,10 @@ def argument_text(header, value):
 
 
 def fill_from_code(header, params, body, called, read_argument):
-    """Rellena f(/* char const* */) con lo que dicen las instrucciones del .so. En un método, r0 suele ser
-    this y las posiciones no coinciden: solo se rellena si se ve que no lo es, porque su primer argumento
-    es un parámetro de la función con el tipo que espera, como un float."""
+    """Rellena f(/* char const* */) con lo que dicen las instrucciones del .so.
+    En un método, r0 suele ser this y las posiciones no coinciden: solo se
+    rellena si se ve que no lo es, porque su primer argumento es un parámetro de
+    la función con el tipo que espera, como un float."""
     kinds = {param.split()[-1].lstrip("*"): param.rpartition(" ")[0] for param in params}
 
     def fill(match, number=0):
@@ -1241,9 +1431,10 @@ def fill_from_code(header, params, body, called, read_argument):
 
 
 def fill_from_registers(header, body):
-    """Ghidra no enseña un argumento si su register no se ha tocado: f(/* float */) recibe r0 tal como
-    entró en esta función. Se rellena con el parámetro de la misma posición si ninguna llamada ha podido
-    cambiarlo. Solo entre funciones libres: en un método, r0 es this y las posiciones no coinciden."""
+    """Ghidra no enseña un argumento si su register no se ha tocado: f(/* float
+    */) recibe r0 tal como entró en esta función. Se rellena con el parámetro de
+    la misma posición si ninguna llamada ha podido cambiarlo. Solo entre
+    funciones libres: en un método, r0 es this y las posiciones no coinciden."""
     params = split_types(header["params"])
     if "::" in header["name"] or not params or re.search(r"double|long long", header["params"]):
         return body
@@ -1268,7 +1459,8 @@ def fill_from_registers(header, body):
 
 
 def typed_params(header, body, called):
-    """Si un parámetro se pasa tal cual a una función con tipos conocidos, ese es su tipo."""
+    """Si un parámetro se pasa tal cual a una función con tipos conocidos, ese
+    es su tipo."""
     params = split_types(header["params"])
     for i, param in enumerate(params):
         kind, _, name = param.rpartition(" ")
@@ -1277,14 +1469,16 @@ def typed_params(header, body, called):
         for function, types in called.items():
             for match in re.finditer(rf"(?<![\w:]){re.escape(function)}\(", body) if types else ():
                 args = [re.sub(r"\s*/\*.*\*/", "", arg) for arg in split_call(body, match.end())[0]]
-                extra = len(args) - len(types)                # 1 si se ve el this
+                # 1 si se ve el this
+                extra = len(args) - len(types)
                 if extra in (0, 1) and name in args[extra:]:
                     params[i] = f"{types[args.index(name, extra) - extra]} {name}"
     return f"{header['type']}{header['name']}({', '.join(params) or 'void'})"
 
 
 def name_jni_variables(text):
-    """vm->AttachCurrentThread(&local_1c, 0) deja el JNIEnv en local_1c. Ghidra lo ve como un array."""
+    """vm->AttachCurrentThread(&local_1c, 0) deja el JNIEnv en local_1c. Ghidra
+    lo ve como un array."""
     match = re.search(r"\bvm->(?:GetEnv|AttachCurrentThread(?:AsDaemon)?)\(&(\w+)", text)
     if match and match[1] != "env":
         name = match[1]
@@ -1297,8 +1491,9 @@ def name_jni_variables(text):
 
 
 def fill_jni_calls(header, body, read_argument):
-    """env->CallStaticVoidMethod(/* jclass */, /* jmethodID */, /* ... */): la clase y el método se leen de las
-    instrucciones. Un __aeabi_f2d(x) justo antes es el float que se pasa: en ... todo float llega como double."""
+    """env->CallStaticVoidMethod(/* jclass */, /* jmethodID */, /* ... */): la
+    clase y el método se leen de las instrucciones. Un __aeabi_f2d(x) justo
+    antes es el float que se pasa: en ... todo float llega como double."""
     lines = body.split("\n")
     for index, line in enumerate(lines):
         match = re.search(r"\benv->(\w+)\(", line)
@@ -1319,7 +1514,8 @@ def fill_jni_calls(header, body, read_argument):
 
 
 def fill_tested_method(body):
-    """if (jMethodX == 0) {...} else { env->CallStaticVoidMethod(a, /* jmethodID */) }: es ese método."""
+    """if (jMethodX == 0) {...} else { env->CallStaticVoidMethod(a, /* jmethodID
+    */) }: es ese método."""
     lines = body.split("\n")
     for index, line in enumerate(lines):
         if "/* jmethodID */" not in line or not index or lines[index - 1].strip() != "else {":
@@ -1358,7 +1554,8 @@ def use_operators(line):
             else:
                 result += text[match.start():end + 1]
     if line.lstrip().startswith("//") or re.fullmatch(r"\s*\w+\([^()]*\);", line):
-        if re.match(r"\s*__aeabi_f", line):                  # sin usar su resultado, sigue siendo una llamada
+        # sin usar su resultado, sigue siendo una llamada
+        if re.match(r"\s*__aeabi_f", line):
             return re.sub(r"\b0x[0-9a-f]{8}\b", lambda m: constant_text(int(m[0], 16)), line)
         return line
     line = rewrite(line)
@@ -1366,7 +1563,8 @@ def use_operators(line):
 
 
 def fold_comparisons(body):
-    """v = a < b; if (v == 0) { es if (a >= b) {, si v no se lee hasta su siguiente asignación."""
+    """v = a < b; if (v == 0) { es if (a >= b) {, si v no se lee hasta su
+    siguiente asignación."""
     lines = body.split("\n")
     for i in range(len(lines) - 2, -1, -1):
         value = re.fullmatch(r"[ \t]*(\w+Var\d+) = ([^;]+ (?:<|>|<=|>=|==) [^;]+);", lines[i])
@@ -1381,8 +1579,10 @@ def fold_comparisons(body):
     return "\n".join(lines)
 
 
-# Las divisiones enteras: ARMv5 no tiene instrucción para dividir y el compilador llama a estas funciones.
-# Devuelven el cociente en r0 (r0:r1 las de 64 bits) y el resto en el register que se indica.
+# Las divisiones enteras: ARMv5 no tiene instrucción para dividir y el
+# compilador llama a estas funciones.
+# Devuelven el cociente en r0 (r0:r1 las de 64 bits) y el resto en el register
+# que se indica.
 DIVISIONS = {"__aeabi_idiv": None, "__aeabi_uidiv": None, "__aeabi_idivmod": 1, "__aeabi_uidivmod": 1,
              "__aeabi_ldivmod": 2, "__aeabi_uldivmod": 2}
 DIVISION_CALL = re.compile(r"(?<![\w:.>])(" + "|".join(DIVISIONS) + r")\(")
@@ -1391,7 +1591,8 @@ LOOP_HEAD = re.compile(r"\s*(?:do \{|while\b|for\b)")
 
 
 def operand(text):
-    """a + 1 pasa a (a + 1): entre paréntesis si tiene operadores fuera de paréntesis."""
+    """a + 1 pasa a (a + 1): entre paréntesis si tiene operadores fuera de
+    paréntesis."""
     depth, quoted = 0, False
     for i, c in enumerate(text):
         if c == '"':
@@ -1406,7 +1607,8 @@ def operand(text):
 
 
 def ghidra_name(body, kind):
-    """Un nombre nuevo al estilo de Ghidra para una variable de ese tipo: uVar18, iVar18, puVar18..."""
+    """Un nombre nuevo al estilo de Ghidra para una variable de ese tipo:
+    uVar18, iVar18, puVar18..."""
     stars = kind.count("*")
     letter = {"int": "i", "int32_t": "i", "float": "f", "char": "c", "bool": "b", "uchar": "b", "byte": "b",
               "short": "s", "long": "l", "longlong": "l"}.get(kind.replace("*", "").strip(), "u")
@@ -1420,8 +1622,9 @@ def declared_type(body, name):
 
 
 def straight_order(body, callee, line_number, column):
-    """Como call_order, pero basta con que todas las llamadas a callee vayan antes del primer salto, etiqueta,
-    loop o else: hasta ahí el texto sigue el orden de las instrucciones."""
+    """Como call_order, pero basta con que todas las llamadas a callee vayan
+    antes del primer salto, etiqueta, loop o else: hasta ahí el texto sigue el
+    orden de las instrucciones."""
     found, broken = [], False
     for number, line in enumerate(body.split("\n")):
         if line.lstrip().startswith("//"):
@@ -1436,9 +1639,10 @@ def straight_order(body, callee, line_number, column):
 
 
 def remainder_variable(lines, start, body, exclude=()):
-    """Ghidra no sabe que la función deja el resto en un register, así que lo enseña después como una
-    variable que nadie asigna: extraout_r1, o incluso arg1_01. Se busca en las líneas siguientes, hasta otra
-    llamada, una etiqueta o un bloque."""
+    """Ghidra no sabe que la función deja el resto en un register, así que lo
+    enseña después como una variable que nadie asigna: extraout_r1, o incluso
+    arg1_01. Se busca en las líneas siguientes, hasta otra llamada, una etiqueta
+    o un bloque."""
     for line in lines[start:start + 8]:
         text = line.strip()
         if text.startswith("//") or not text:
@@ -1455,8 +1659,9 @@ def remainder_variable(lines, start, body, exclude=()):
 
 
 def inline_once(lines, index, variable):
-    """v = expr; seguido de un solo uso de v es ese uso con expr dentro, si entre medias no cambia nada de lo
-    que lee expr y nadie más puede leer v. Devuelve las líneas nuevas, o None."""
+    """v = expr; seguido de un solo uso de v es ese uso con expr dentro, si
+    entre medias no cambia nada de lo que lee expr y nadie más puede leer v.
+    Devuelve las líneas nuevas, o None."""
     match = re.fullmatch(rf"([ \t]*){variable} = (.+);", lines[index])
     if not match:
         return None
@@ -1469,7 +1674,8 @@ def inline_once(lines, index, variable):
         return None
     use = following[0]
     if len(writes) > 1:
-        # Con varias asignaciones, un loop o una etiqueta podrían llevar otro valor hasta el uso.
+        # Con varias asignaciones, un loop o una etiqueta podrían llevar otro
+        # valor hasta el uso.
         later = [w for w in writes if w > index]
         end = later[0] if later else len(lines)
         if any(i > use and i < end for i in uses) or any(LABEL.fullmatch(line) for line in lines[index:end]):
@@ -1500,8 +1706,9 @@ def inline_once(lines, index, variable):
 
 
 def use_division(header, body, read_helper):
-    """__aeabi_idivmod(a, b); x = extraout_r1;  pasa a  x = a % b, y v = __aeabi_idiv(a, b) a v = a / b. En las
-    de 64 bits el divisor va en r2:r3, que Ghidra no enseña: se lee de las instrucciones."""
+    """__aeabi_idivmod(a, b); x = extraout_r1;  pasa a  x = a % b, y
+    v = __aeabi_idiv(a, b) a  v = a / b. En las de 64 bits el divisor va en
+    r2:r3, que Ghidra no enseña: se lee de las instrucciones."""
     if not DIVISION_CALL.search(body):
         return header[0] + body
     lines, touched, halves = body.split("\n"), set(), set()
@@ -1516,19 +1723,22 @@ def use_division(header, body, read_helper):
             low, high = (read_helper(header["name"], match[1], register, order) for register in (2, 3))
             known = [value for value in (low, high) if value and not value.startswith("param:")]
             if len(known) == 2:
-                # La mitad alta suele ser 0: con movs sale 0, y leída de un literal, 0x0.
+                # La mitad alta suele ser 0: con movs sale 0, y leída de un
+                # literal, 0x0.
                 zero = re.fullmatch(r"0|0x0+", high)
                 divisors[(number, k)] = low if zero else f"((int64_t){high} << 32 | {low})"
 
     def pieces(name, args, number, k):
-        """El dividendo y el divisor. k es cuál de las divisiones de la línea: se reescriben en orden."""
+        """El dividendo y el divisor. k es cuál de las divisiones de la línea:
+        se reescriben en orden."""
         if DIVISIONS[name] != 2:
             return (args + ["/* r1 */"])[:2] if args else ["/* r0 */", "/* r1 */"]
         divisor = divisors.get((number, k), "/* r2:r3 */")
         if len(args) == 2:
             low = re.search(rf"^[ \t]*{re.escape(args[0])} = (.+);$", body, re.M)
             high = re.search(rf"^[ \t]*{re.escape(args[1])} = (.+);$", body, re.M)
-            if low and high and high[1] == f"(&{low[1]})[1]":     # las dos mitades de la misma global
+            # las dos mitades de la misma global
+            if low and high and high[1] == f"(&{low[1]})[1]":
                 halves.update(args)
                 return [low[1], divisor]
             return [f"((int64_t){args[1]} << 32 | {args[0]})", divisor]
@@ -1550,7 +1760,8 @@ def use_division(header, body, read_helper):
             after = re.match(r",\s*(extraout_r\d(?:_\d+)?)\b", line[end + 1:])
             statement = re.fullmatch(rf"([ \t]*){re.escape(line[match.start():end + 1])};", line)
             assigned = re.fullmatch(rf"([ \t]*)(\w+) = {re.escape(line[match.start():end + 1])};", line)
-            # (__aeabi_idivmod(a, b), extraout_r1 == 0): el resto, dentro de una condición.
+            # (__aeabi_idivmod(a, b), extraout_r1 == 0): el resto, dentro de una
+            # condición.
             if remainder and after and line[match.start() - 1] == "(":
                 new = f"{operand(dividend)} % {operand(divisor)}"
                 line = line[:match.start()] + new + line[end + 1 + after.end():]
@@ -1586,7 +1797,8 @@ def use_division(header, body, read_helper):
                     break
     body = "\n".join(lines)
     for name in halves:
-        if len(re.findall(rf"\b{name}\b", body)) == 2:   # la declaración y la asignación
+        # la declaración y la asignación
+        if len(re.findall(rf"\b{name}\b", body)) == 2:
             body = remove_declaration(re.sub(rf"^[ \t]*{name} = .+;\n", "", body, flags=re.M), name)
     for name in sorted(touched):
         if len(re.findall(rf"\b{name}\b", body)) == 1:
@@ -1597,16 +1809,19 @@ def use_division(header, body, read_helper):
 
 
 def use_entry_registers(header, body):
-    """in_r0 es lo que entró en r0, igual que el parámetro de esa posición: Ghidra los separa si cree que
-    ese parámetro no se usa. noname_0 pasa a arg0, para que el nombre diga en qué register entró."""
+    """in_r0 es lo que entró en r0, igual que el parámetro de esa posición:
+    Ghidra los separa si cree que ese parámetro no se usa. noname_0 pasa a arg0,
+    para que el nombre diga en qué register entró."""
     params = split_types(header["params"])
     if "::" not in header["name"]:
-        # in_s0 también es r0: un .so de Thumb-1 no tiene VFP, y los float van en los registers normales.
+        # in_s0 también es r0: un .so de Thumb-1 no tiene VFP, y los float van
+        # en los registers normales.
         for kind, bank, register in re.findall(r"^(?![ \t]*return\b)[ \t]*([\w ]+?\*?) ?\bin_([rs])([0-3]);\n", body, re.M):
             register = int(register)
             if register == len(params):
                 names = [param.split()[-1].lstrip("*") for param in params]
-                if f"arg{register}" in names:   # radare empieza en arg1 = r0: se pasa todo a su register
+                if f"arg{register}" in names:   # radare empieza en arg1 = r0:
+                                                # se pasa todo a su register
                     new, body = names_by_register(names, body, 0)
                     params = [re.sub(r"\w+$", name, param) for param, name in zip(params, new)]
                 params.append(f"{kind} arg{register}")
@@ -1622,8 +1837,9 @@ def use_entry_registers(header, body):
 
 
 def hidden_registers(header, body, read_argument):
-    """uint noname_0; sin asignar, y f(noname_0, x): Ghidra no enseña lo que hay en ese register. Se lee de las
-    instrucciones si f solo se llama una vez. Si no, queda f(/* r0 */, x)."""
+    """uint noname_0; sin asignar, y f(noname_0, x): Ghidra no enseña lo que hay
+    en ese register. Se lee de las instrucciones si f solo se llama una vez. Si
+    no, queda f(/* r0 */, x)."""
     for name, register in re.findall(r"^[ \t]*\w+ (noname_(\d+)(?:_\d+)?);$", body, re.M):
         body = re.sub(rf"\b{name}\b", f"/* r{register} */", remove_declaration(body, name))
 
@@ -1653,8 +1869,8 @@ def simplify_function(header, body, called, read_argument):
 
 
 def add_addresses(header, body, targets):
-    """Encima del header y del primer uso de cada nombre, su dirección: pdg @ 0x52a10 la muestra en
-    radare."""
+    """Encima del header y del primer uso de cada nombre, su dirección: pdg @
+    0x52a10 la muestra en radare."""
     if not targets:
         return header[0] + body
     names = "|".join(re.escape(name) for name in sorted(targets, key=len, reverse=True))
@@ -1678,7 +1894,8 @@ def add_addresses(header, body, targets):
 
 
 def drop_if_unused(body, name):
-    """Quita la declaración de una variable que ya nadie usa, también si es un array."""
+    """Quita la declaración de una variable que ya nadie usa, también si es un
+    array."""
     if len(re.findall(rf"\b{name}\b", body)) == 1:
         return re.sub(rf"^(?![ \t]*return\b)[ \t]*[\w ]+\*?\b{name}(?: \[\w+\])?;\n", "", body, flags=re.M)
     return body
@@ -1697,7 +1914,8 @@ def remove_aliases(body):
 
 
 def remove_stack_guard(body):
-    """El compilador guarda __stack_chk_guard al entrar y lo compara al salir. No es lógica del juego."""
+    """El compilador guarda __stack_chk_guard al entrar y lo compara al salir.
+    No es lógica del juego."""
     guard = re.search(r"^[ \t]*(\w+) = __stack_chk_guard;\n", body, re.M)
     if not guard:
         return body
@@ -1712,7 +1930,8 @@ def remove_stack_guard(body):
 
 
 def inline_copied_strings(body):
-    """memcpy(&t, "texto", 0x34); f(&t): el texto se copia al stack solo para pasárselo a f."""
+    """memcpy(&t, "texto", 0x34); f(&t): el texto se copia al stack solo para
+    pasárselo a f."""
     for match in re.finditer(r'^[ \t]*memcpy\(&?(\w+),\s*("[^"\n]*"),\s*(0x[0-9a-f]+|\d+)\);\n', body, re.M):
         rest = body.replace(match[0], "", 1)
         if len(re.findall(rf"\b{match[1]}\b", rest)) == 2 and int(match[3], 0) > len(match[2]) - 2:
@@ -1722,7 +1941,8 @@ def inline_copied_strings(body):
 
 
 def collapse_temporaries(body):
-    """v = f(); g = v; if (v != 0) es g = f(); if (g != 0), si g no cambia mientras se usa v."""
+    """v = f(); g = v; if (v != 0) es g = f(); if (g != 0), si g no cambia
+    mientras se usa v."""
     lines, i, names = body.split("\n"), 0, set()
     while i < len(lines) - 1:
         first = re.fullmatch(r"([ \t]*)(\w+Var\d+) = (.+);", lines[i])
@@ -1734,7 +1954,8 @@ def collapse_temporaries(body):
         temporary, target, end, safe = first[2], second[1], i + 1, True
         uses, reassigned = [], None
         while end < len(lines):
-            # v = f(v): la asignación siguiente todavía lee el valor anterior, así que también cuenta.
+            # v = f(v): la asignación siguiente todavía lee el valor anterior,
+            # así que también cuenta.
             reassigned = re.match(rf"([ \t]*{temporary} = )(.*)", lines[end])
             if reassigned:
                 break
@@ -1744,8 +1965,9 @@ def collapse_temporaries(body):
                 safe = not any(re.search(rf"\b{temporary}\b", line) for line in lines[end:])
                 break
             end += 1
-        # Dentro de un loop, v puede volver a leerse en la vuelta siguiente con otro valor: si se reasigna
-        # dentro de un loop abierto después, o si el loop que la contiene la lee antes de la asignación.
+        # Dentro de un loop, v puede volver a leerse en la vuelta siguiente con
+        # otro valor: si se reasigna dentro de un loop abierto después, o si el
+        # loop que la contiene la lee antes de la asignación.
         if reassigned and any(LOOP_HEAD.match(lines[k]) and indent_of(lines[end]) > indent_of(lines[k])
                               for k in range(i, end)):
             safe = False
@@ -1755,7 +1977,8 @@ def collapse_temporaries(body):
                             for j in range(k + 1, i - 1))):
                 if any(re.search(rf"\b{temporary}\b", line) for line in lines[k:i - 1]):
                     safe = False
-        if not safe or (uses and target.startswith("*")):   # un campo podría cambiar entre medias
+        # un campo podría cambiar entre medias
+        if not safe or (uses and target.startswith("*")):
             continue
         for use in uses:
             lines[use] = re.sub(rf"\b{temporary}\b", lambda _: target, lines[use])
@@ -1771,7 +1994,8 @@ def collapse_temporaries(body):
 
 
 def forward_strings(body):
-    """v = "(I)V"; f(v): se sustituye donde se usa, si dentro de su bloque y hasta la siguiente asignación."""
+    """v = "(I)V"; f(v): se sustituye donde se usa, si dentro de su bloque y
+    hasta la siguiente asignación."""
     lines = body.split("\n")
     for name in set(re.findall(r'^[ \t]*(\w+Var\d+) = "[^"\n]*";$', body, re.M)):
         assigned = [i for i, line in enumerate(lines) if re.match(rf"[ \t]*{name} = ", line)]
@@ -1796,8 +2020,9 @@ def forward_strings(body):
 
 
 def forward_globals(body):
-    """v = g; ... *(v + 0x20): v es una copia de la global, si no hay ninguna llamada que pueda cambiarla
-    mientras se usa, y nadie vuelve a leer v después."""
+    """v = g; ... *(v + 0x20): v es una copia de la global, si no hay ninguna
+    llamada que pueda cambiarla mientras se usa, y nadie vuelve a leer v
+    después."""
     lines, i = body.split("\n"), 0
     own_names = r"\w+Var\d+|local_\w+|arg\d+(?:_\d+)?|param_\d+|this|env|vm"
     while i < len(lines):
@@ -1813,13 +2038,15 @@ def forward_globals(body):
             if line.lstrip().startswith("//"):
                 continue
             if assignment.match(line):
-                safe = len(line) - len(line.lstrip()) <= len(match[1])   # si es más adentro, no vale siempre
+                # si es más adentro, no vale siempre
+                safe = len(line) - len(line.lstrip()) <= len(match[1])
                 break
             if re.fullmatch(r"\w+:", line.strip()) or re.match(r"\s*(?:while|for|do|switch)\b|.*\bgoto\b", line):
                 safe = False
                 break
             if re.search(r"\w\(", line):
-                # Una llamada puede cambiar la global: desde aquí, nadie debe leer v.
+                # Una llamada puede cambiar la global: desde aquí, nadie debe
+                # leer v.
                 for later in lines[end:]:
                     if assignment.match(later):
                         safe = len(later) - len(later.lstrip()) <= len(match[1])
@@ -1843,7 +2070,8 @@ def forward_globals(body):
 
 
 def forward_constants(body):
-    """v = 60.0f; *(this + 0xc) = v: una constante que solo se asigna una vez se sustituye donde se usa."""
+    """v = 60.0f; *(this + 0xc) = v: una constante que solo se asigna una vez se
+    sustituye donde se usa."""
     number = r"-?(?:0x[0-9a-f]+|\d+(?:\.\d+)?f?)"
     for name, value in re.findall(rf"^    (\w+Var\d+) = ({number});$", body, re.M):
         if len(re.findall(rf"(?<![*\w]){name} = ", body)) == 1 and f"&{name}" not in body:
@@ -1854,8 +2082,9 @@ def forward_constants(body):
 
 
 def name_timeb(body):
-    """ftime rellena un struct timeb: time en +0, millitm en +4, timezone en +6 y dstflag en +8. Cada campo
-    está más arriba en el stack, así que Ghidra lo ve como otra variable."""
+    """ftime rellena un struct timeb: time en +0, millitm en +4, timezone en +6
+    y dstflag en +8. Cada campo está más arriba en el stack, así que Ghidra lo
+    ve como otra variable."""
     call = re.search(r"\bftime\(&?(local_([0-9a-f]+))\);", body)
     if not call:
         return body
@@ -1880,7 +2109,8 @@ def block_end(lines, start):
 
 
 def chain_length(lines, start):
-    """Cuántos if hay uno dentro de otro, cada uno como lo último del anterior y sin else."""
+    """Cuántos if hay uno dentro de otro, cada uno como lo último del anterior y
+    sin else."""
     end = block_end(lines, start)
     if end is None or not re.fullmatch(r"[ \t]*if \(.*\) \{", lines[start]):
         return 0
@@ -1894,8 +2124,10 @@ def chain_length(lines, start):
 
 
 def array_loop(body):
-    """p = this; q = this + 2; do { *p = 0; *q = 1; p += 5; q += 5; } while (p != this + 0x23); recorre un array:
-    5 palabras son 0x14 bytes por elemento, y 0x23 / 5 son 7 elementos. Se escribe con un índice y campos en bytes."""
+    """p = this; q = this + 2; do { *p = 0; *q = 1; p += 5; q += 5; } while (p
+    != this + 0x23); recorre un array:
+    5 palabras son 0x14 bytes por elemento, y 0x23 / 5 son 7 elementos. Se
+    escribe con un índice y campos en bytes."""
     lines = body.split("\n")
     for start, line in enumerate(lines):
         if line.strip() != "do {" or re.search(r"\bi\b", body):
@@ -1947,8 +2179,10 @@ def array_loop(body):
 
 
 def flatten_guards(body):
-    """if (a) { x; if (b) { y; if (c) {...} } } es lo mismo que if (!a) goto L_done; x; if (!b) goto L_done; y;...
-    Solo en cadenas de 3 o más, que es cuando el código se sale de la pantalla."""
+    """if (a) { x; if (b) { y; if (c) {...} } } es lo mismo que if (!a) goto
+    L_done; x; if (!b) goto L_done; y;...
+    Solo en cadenas de 3 o más, que es cuando el código se sale de la
+    pantalla."""
     lines, i, label = body.split("\n"), 0, None
     while i < len(lines):
         match = re.fullmatch(r"    if \((.*)\) \{", lines[i])
@@ -1968,8 +2202,8 @@ def flatten_guards(body):
 
 
 def single_element_arrays(body):
-    """int local_1c [2]; del que solo se usa local_1c[0] es una variable normal: local_1c[0] es su valor y
-    local_1c, sin índice, su dirección."""
+    """int local_1c [2]; del que solo se usa local_1c[0] es una variable normal:
+    local_1c[0] es su valor y local_1c, sin índice, su dirección."""
     for name in re.findall(r"^[ \t]*[\w ]+\*?\b(local_\w+) \[\d+\];$", body, re.M):
         indexes = set(re.findall(rf"\b{name}\[(\w+)\]", body))
         if indexes != {"0"}:
@@ -1981,8 +2215,9 @@ def single_element_arrays(body):
 
 
 def forward_addresses(body):
-    """v = &g; f(v); ... v = &h; f(v);: una dirección no cambia, así que cada uso es &g o &h. Si v se usa con
-    índices, como v[1], son campos de g: g.field_0x4."""
+    """v = &g; f(v); ... v = &h; f(v);: una dirección no cambia, así que cada
+    uso es &g o &h. Si v se usa con índices, como v[1], son campos de g:
+    g.field_0x4."""
     if re.search(r"\bgoto\b|^\s*\w+:$|\b(?:while|for|switch)\b|\bdo \{", body, re.M):
         return body
     lines = body.split("\n")
@@ -2020,7 +2255,8 @@ def indent_of(line):
 
 
 def enclosing_blocks(lines, index):
-    """Las líneas que abren los bloques donde está lines[index], de dentro hacia afuera."""
+    """Las líneas que abren los bloques donde está lines[index], de dentro hacia
+    afuera."""
     found, level = [], indent_of(lines[index])
     for line in reversed(lines[:index]):
         if line.strip() and indent_of(line) < level and not LABEL.fullmatch(line):
@@ -2030,11 +2266,13 @@ def enclosing_blocks(lines, index):
 
 
 def overwritten_after(lines, start, variable):
-    """1 si, a partir de lines[start], lo siguiente que le pasa a la variable en cualquier camino es una nueva
-    asignación: su valor anterior ya no lo lee nadie. Sin saltos ni etiquetas por medio, y sin llegar al final
-    de un loop, que volvería a empezar más arriba."""
+    """1 si, a partir de lines[start], lo siguiente que le pasa a la variable en
+    cualquier camino es una nueva asignación: su valor anterior ya no lo lee
+    nadie. Sin saltos ni etiquetas por medio, y sin llegar al final de un loop,
+    que volvería a empezar más arriba."""
     loops = [indent_of(line) for line in enclosing_blocks(lines, start) if LOOP_HEAD.match(line)]
-    floor, inner = indent_of(lines[start]), []   # inner: los loops abiertos después, donde break no sale
+    floor, inner = indent_of(lines[start]), []   # inner: los loops abiertos
+                                                 # después, donde break no sale
     for line in lines[start + 1:]:
         text = line.strip()
         if not text or text.startswith("//"):
@@ -2052,16 +2290,18 @@ def overwritten_after(lines, start, variable):
         if LOOP_HEAD.match(line):
             inner.append(indent_of(line))
         if re.search(rf"\b{variable}\b", line):
-            # Más adentro que algo abierto entre medias, la asignación podría no ejecutarse.
+            # Más adentro que algo abierto entre medias, la asignación podría no
+            # ejecutarse.
             return (indent_of(line) <= floor
                     and bool(re.fullmatch(rf"[ \t]*{variable} = (?!=)(?!.*\b{variable}\b).*;", line)))
     return True
 
 
 def address_span(lines, start, writes):
-    """Las líneas en las que la variable asignada en lines[start] sigue valiendo lo mismo: hasta la siguiente
-    asignación o el final del bloque. Una etiqueta no corta si todos sus goto están dentro: se llega a ella
-    con el mismo valor. Devuelve las líneas y si se cortó en un loop que vuelve a asignarla."""
+    """Las líneas en las que la variable asignada en lines[start] sigue valiendo
+    lo mismo: hasta la siguiente asignación o el final del bloque. Una etiqueta
+    no corta si todos sus goto están dentro: se llega a ella con el mismo valor.
+    Devuelve las líneas y si se cortó en un loop que vuelve a asignarla."""
     later = [w for w in writes if w > start]
     end = start + 1
     while end < len(lines) and end not in writes and (LABEL.fullmatch(lines[end]) or not (
@@ -2087,10 +2327,11 @@ def address_span(lines, start, writes):
 
 
 def forward_global_addresses(body):
-    """v = &g; ... v[3]: lo mismo que forward_addresses, también con saltos y loops. v vale &g desde la
-    asignación hasta la siguiente (address_span). Si v se copia o recorre g, g es un array y v[3] es g[3]. Si
-    no, g es una estructura: g.field_0xc. Con v = &g + i * 0x24, v apunta al elemento i: *(v + 4) es
-    *(&g + i * 0x24 + 4), que global_fields escribe g[i].field_0x4."""
+    """v = &g; ... v[3]: lo mismo que forward_addresses, también con saltos y
+    loops. v vale &g desde la asignación hasta la siguiente (address_span). Si v
+    se copia o recorre g, g es un array y v[3] es g[3]. Si no, g es una
+    estructura: g.field_0xc. Con v = &g + i * 0x24, v apunta al elemento i: *(v
+    + 4) es *(&g + i * 0x24 + 4), que global_fields escribe g[i].field_0x4."""
     lines = body.split("\n")
     pointer_use = r"\*{0}\b|\*\({0}\b|\b{0}\[|\b{0}->|(?<![*\w]){0} [-+] |(?<![\w*.>])(?:[(,] ?|= |return ){0}(?=[,);])"
     address = rf"&([A-Za-z_][\w:]*)(?: \+ ({INDEX}) \* (0x[0-9a-f]+|\d+))?"
@@ -2103,7 +2344,8 @@ def forward_global_addresses(body):
             continue
         writes = [i for i, line in enumerate(lines) if re.search(rf"(?<![\w*.>]){variable} = (?!=)", line)]
         starts = [i for i in writes if re.fullmatch(rf"[ \t]*{variable} = {address};", lines[i])]
-        # Un cursor: siempre la misma global, o la anterior más algo. Entonces recorre la global: es un array.
+        # Un cursor: siempre la misma global, o la anterior más algo. Entonces
+        # recorre la global: es un array.
         targets = {re.fullmatch(rf"[ \t]*{variable} = {address};", lines[i])[1] for i in starts}
         steps = [i for i in writes if re.fullmatch(rf"[ \t]*{variable} = {variable} [-+] .+;", lines[i])]
         cursor = bool(steps) and len(targets) == 1 and len(starts) + len(steps) == len(writes)
@@ -2111,7 +2353,8 @@ def forward_global_addresses(body):
         for start in starts:
             match = re.fullmatch(rf"[ \t]*{variable} = {address};", lines[start])
             target, index, step = match[1], match[2], match[3]
-            if len(writes) == 1:      # siempre vale lo mismo, también en los usos de más arriba
+            if len(writes) == 1:      # siempre vale lo mismo, también en los
+                                      # usos de más arriba
                 span, looped = [i for i in range(len(lines)) if i != start], False
             else:
                 span, looped = address_span(lines, start, writes)
@@ -2124,7 +2367,8 @@ def forward_global_addresses(body):
                         break
             uses = [i for i in span if re.search(rf"\b{variable}\b", lines[i]) and not lines[i].lstrip().startswith("//")
                     and not re.fullmatch(rf"(?![ \t]*return\b)[ \t]*[\w ]+\*?\b{variable};", lines[i])]
-            if looped:   # p = &g; e = p + 0x40; do {...}: el final de un recorrido se deja como está
+            if looped:   # p = &g; e = p + 0x40; do {...}: el final de un
+                         # recorrido se deja como está
                 uses = [i for i in uses if not re.fullmatch(rf"[ \t]*\w+ = {variable} [-+] (?:0x[0-9a-f]+|\d+);", lines[i])]
             text = "\n".join(lines[i] for i in uses)
             if index:
@@ -2139,7 +2383,8 @@ def forward_global_addresses(body):
                 continue
             array = kind.endswith("*") and (cursor or bool(re.search(
                 rf"(?<![\w*.>])\w+ = {variable};|(?<![*\w]){variable} [-+] |\b{variable}\[(?!(?:0x[0-9a-f]+|\d+)\])", text)))
-            alone = not re.search(rf"\b{variable}\b", re.sub(rf"\*{variable}\b", "", text))   # solo *v
+            # solo *v
+            alone = not re.search(rf"\b{variable}\b", re.sub(rf"\*{variable}\b", "", text))
 
             def field(offset):
                 return f"{target}.field_{offset:#x}"
@@ -2173,8 +2418,9 @@ WIDE_COPY = re.compile(r"^([ \t]*)(\w+Var\d+) = \(&([\w:]+)\)\[1\];\n[ \t]*([\w:
 
 
 def forward_scaled_indexes(body):
-    """v = i * 8; ... *(&g + v): v es el offset del elemento i. Se escribe dentro, para que se vea
-    g[i], si v solo se asigna ahí y nada de lo que lee cambia antes de usarla."""
+    """v = i * 8; ... *(&g + v): v es el offset del elemento i. Se escribe
+    dentro, para que se vea g[i], si v solo se asigna ahí y nada de lo que lee
+    cambia antes de usarla."""
     lines = body.split("\n")
     for index, line in enumerate(lines):
         match = re.fullmatch(rf"([ \t]*)(\w+Var\d+) = ({INDEX}) \* (0x[0-9a-f]+|\d+);", line)
@@ -2205,8 +2451,8 @@ def forward_scaled_indexes(body):
 
 
 def inline_stack_copies(body):
-    """local_38 = arg1; m_iventMode = local_38;: Ghidra ve el paso por el stack. Si nadie toma su dirección y
-    solo se usa una vez, es m_iventMode = arg1."""
+    """local_38 = arg1; m_iventMode = local_38;: Ghidra ve el paso por el stack.
+    Si nadie toma su dirección y solo se usa una vez, es m_iventMode = arg1."""
     lines = body.split("\n")
     for name in sorted(set(re.findall(r"^(?![ \t]*return\b)[ \t]*\w[\w ]*? (local_\w+);$", body, re.M))):
         if f"&{name}" in "\n".join(lines):
@@ -2219,19 +2465,22 @@ def inline_stack_copies(body):
 
 
 def join_wide_copies(body):
-    """v = (&g)[1]; h.field_0x0 = g; h.field_0x4 = v: copia los 8 bytes de g en h, mitad a mitad, como hace
-    el compilador con un long long. Es h = g."""
+    """v = (&g)[1]; h.field_0x0 = g; h.field_0x4 = v: copia los 8 bytes de g en
+    h, mitad a mitad, como hace el compilador con un long long. Es h = g."""
     for name in set(match[2] for match in WIDE_COPY.finditer(body)):
         copies = [match for match in WIDE_COPY.finditer(body) if match[2] == name]
-        if len(re.findall(rf"\b{name}\b", body)) == 2 * len(copies) + 1:   # y la declaración
+        # y la declaración
+        if len(re.findall(rf"\b{name}\b", body)) == 2 * len(copies) + 1:
             body = WIDE_COPY.sub(lambda m: f"{m[1]}{m[4]} = {m[3]};" if m[2] == name else m[0], body)
             body = remove_declaration(body, name)
     return body
 
 
 def drop_dead_stores(body):
-    """iVar3 = &DAT_bc6fc; sin que nadie lea iVar3: queda de algo que ya se ha resuelto, como la base de la
-    GOT o la cadena vacía de los string. Solo se quitan valores sin efectos: direcciones y números."""
+    """iVar3 = &DAT_bc6fc; sin que nadie lea iVar3: queda de algo que ya se ha
+    resuelto, como la base de la
+    GOT o la cadena vacía de los string. Solo se quitan valores sin efectos:
+    direcciones y números."""
     for name in set(re.findall(r"^[ \t]*[\w ]+\*?\b(\w+Var\d+);$", body, re.M)):
         pure = rf"^[ \t]*{name} = (?:&[\w:]+|-?0x[0-9a-f]+|-?\d+);\n"
         rest = re.sub(pure, "", body, flags=re.M)
@@ -2279,7 +2528,8 @@ def recognize_idioms(header, body):
 
 
 def constructor_result(body):
-    """v = A::A(local_14, x); A::m(v): en ARM un constructor devuelve this, así que v es el propio objeto."""
+    """v = A::A(local_14, x); A::m(v): en ARM un constructor devuelve this, así
+    que v es el propio objeto."""
     lines = body.split("\n")
     for index, line in enumerate(lines):
         match = re.fullmatch(r"([ \t]*)(\w+Var\d+) = (\w+)::\3\((&?local_\w+)(.*)\);", line)
@@ -2294,8 +2544,9 @@ def constructor_result(body):
 
 
 def use_objects(header, body, called, read_argument):
-    """Si se sabe de qué clase es una variable local, por su constructor o su destructor, las llamadas se
-    escriben como en C++. También se quita el nombre de la clase dentro de sus propios métodos."""
+    """Si se sabe de qué clase es una variable local, por su constructor o su
+    destructor, las llamadas se escriben como en C++. También se quita el nombre
+    de la clase dentro de sus propios métodos."""
     classes, declared, seen = {}, set(), set()
     body = constructor_result(body)
     for match in re.finditer(r"(\w+)::~?\1\(&?(local_\w+)\b", body):
@@ -2317,7 +2568,8 @@ def use_objects(header, body, called, read_argument):
             order = call_order(original, f"{owner}::{method}", number, match.start()) if line == originals[number] else None
             if (known and types is not None and owner != known and local not in seen and whole
                     and len(args) == len(types) + 2 and owner.split("::")[-1] != method):
-                # Un método que devuelve un objeto: &local, this y sus argumentos. a + b, si es operator+.
+                # Un método que devuelve un objeto: &local, this y sus
+                # argumentos. a + b, si es operator+.
                 this = args[1].strip()
                 this = this[1:] if this.startswith("&") else f"*{this}"
                 rest = [arg.strip()[1:] if kind.endswith("&") and arg.strip().startswith("&") else arg.strip()
@@ -2334,7 +2586,8 @@ def use_objects(header, body, called, read_argument):
                 continue
             rest = [arg[1:] if kind.endswith("&") and arg.startswith("&") else arg
                     for arg, kind in zip(args[1:], types or ())]
-            # Un hueco como /* char const* */ también se intenta leer de las instrucciones.
+            # Un hueco como /* char const* */ también se intenta leer de las
+            # instrucciones.
             rest = [(argument_text(header, read_argument(header["name"], f"{owner}::{method}", 1 + i, order)) or arg)
                     if re.fullmatch(r"\s*/\* .* \*/\s*", arg) else arg for i, arg in enumerate(rest)]
             missing = [argument_text(header, read_argument(header["name"], f"{owner}::{method}", 1 + i, order))
@@ -2346,7 +2599,8 @@ def use_objects(header, body, called, read_argument):
                 new = f"{known} {local}({text})" if text else f"{known} {local}\0"
                 declared.add(local)
             elif owner != known and local not in seen and whole:
-                new = f"{known} {local} = {owner}::{method}({text})"   # devuelve el objeto a través de &local
+                # devuelve el objeto a través de &local
+                new = f"{known} {local} = {owner}::{method}({text})"
                 declared.add(local)
             elif owner == method:
                 continue
@@ -2363,7 +2617,8 @@ def use_objects(header, body, called, read_argument):
         if not line.lstrip().startswith("//") and not is_declaration.fullmatch(line):
             line = rewrite(line, number)
             for prefix in prefixes:
-                # Dentro de la clase, A::f(this, x) es f(x): sobra el this y el nombre de la clase.
+                # Dentro de la clase, A::f(this, x) es f(x): sobra el this y el
+                # nombre de la clase.
                 def own_call(match, prefix=prefix):
                     types = called.get(f"{prefix.split('::')[-1]}::{match[1]}")
                     args = split_call(line, match.start(2))[0]
@@ -2383,8 +2638,9 @@ def use_objects(header, body, called, read_argument):
 
 
 def use_pointers(header, body, called):
-    """Camera::f(x, a) con f(float) lleva un argumento de más: es el this, así que se escribe x->f(a). Si x
-    solo se asigna una vez y siempre es de esa clase, también recibe su tipo."""
+    """Camera::f(x, a) con f(float) lleva un argumento de más: es el this, así
+    que se escribe x->f(a). Si x solo se asigna una vez y siempre es de esa
+    clase, también recibe su tipo."""
     classes = {}
 
     def rewrite(line):
@@ -2402,7 +2658,8 @@ def use_pointers(header, body, called):
                 continue
             rest = [arg[1:] if kind.endswith("&") and arg.startswith("&") else arg
                     for arg, kind in zip(args[1:], types)]
-            if args[0].startswith("&"):          # &g->f() es g.f(): el objeto es la propia global
+            if args[0].startswith("&"):          # &g->f() es g.f(): el objeto
+                                                 # es la propia global
                 new = f"{args[0][1:]}.{method}({','.join(rest)})"
                 line = line[:match.start()] + new + line[end + 1:]
                 position = match.start() + len(new)
@@ -2425,14 +2682,18 @@ def use_pointers(header, body, called):
 
 
 def split_float_variables(header, body):
-    """Ghidra usa una variable por register. Si un register guarda un float y luego un int, son dos variables:
-    iVar3 sigue siendo el int y fVar3 pasa a ser el float. Se sigue línea a línea, con cada rama del if por
-    separado. Con saltos o loops no se puede saber qué camino llegó, así que no se toca."""
+    """Ghidra usa una variable por register. Si un register guarda un float y
+    luego un int, son dos variables:
+    iVar3 sigue siendo el int y fVar3 pasa a ser el float. Se sigue línea a
+    línea, con cada rama del if por separado. Con saltos o loops no se puede
+    saber qué camino llegó, así que no se toca."""
     if re.search(r"^\s*(?:\w+:$|.*\bgoto\b|while\b|for\b|do\b|switch\b)", body, re.M):
         return header[0] + body
-    # Solo las variables que reciben los dos tipos, y siempre con una asignación clara.
+    # Solo las variables que reciben los dos tipos, y siempre con una asignación
+    # clara.
     def is_float(value, state):
-        if "(int)" in value or re.search(r" (?:[<>]=?|[=!]=) ", value):   # una comparación da 0 o 1
+        # una comparación da 0 o 1
+        if "(int)" in value or re.search(r" (?:[<>]=?|[=!]=) ", value):
             return False
         return value.startswith("(float)") or bool(re.search(r"\d\.\d*f\b", value)) or any(
             state.get(name) == "f" and re.search(rf"\b{name}\b", value) for name in state)
@@ -2449,7 +2710,8 @@ def split_float_variables(header, body):
         return text
 
     def follow():
-        """Devuelve las líneas nuevas y las variables que se leen sin saber de qué tipo son."""
+        """Devuelve las líneas nuevas y las variables que se leen sin saber de
+        qué tipo son."""
         lines, state, stack, unclear = list(original), {}, [], set()
 
         def check(text):
@@ -2462,7 +2724,8 @@ def split_float_variables(header, body):
                 continue
             if stripped == "}":
                 following = next((other.strip() for other in original[index + 1:] if other.strip()), "")
-                if following == "else {":            # la otra rama empieza como estaba antes del if
+                # la otra rama empieza como estaba antes del if
+                if following == "else {":
                     stack[-1][1], state = dict(state), dict(stack[-1][0])
                     continue
                 saved, branch = stack.pop()
@@ -2502,7 +2765,8 @@ def split_float_variables(header, body):
 
 
 def type_floats(body):
-    """Una variable a la que solo se le asignan valores float es float, aunque Ghidra diga otra cosa."""
+    """Una variable a la que solo se le asignan valores float es float, aunque
+    Ghidra diga otra cosa."""
     known = set(re.findall(r"^[ \t]*float (\w+);$", body, re.M))
     for _ in range(3):
         for kind, name in re.findall(r"^(?![ \t]*return\b)[ \t]*([\w ]+?) (\w+);$", body, re.M):
@@ -2522,8 +2786,10 @@ ELEMENT_ADDRESS = re.compile(r"(?<!\*\()(?<![-+*/] )\b(?:this \+ (\w+) \* (?:0x[
 
 
 def array_element(text):
-    """this + i * 0x14 es la dirección del elemento i de un array al principio del objeto. Escrito así parecería
-    aritmética de pointers de C++, que contaría objetos enteros. El índice es el mismo cuente lo que cuente this."""
+    """this + i * 0x14 es la dirección del elemento i de un array al principio
+    del objeto. Escrito así parecería aritmética de pointers de C++, que
+    contaría objetos enteros. El índice es el mismo cuente lo que cuente
+    this."""
     return ELEMENT_ADDRESS.sub(lambda m: f"&this->array_0x0[{m[1] or m[2]}]", text)
 
 
@@ -2535,10 +2801,12 @@ GLOBAL_ELEMENT = re.compile(rf"\*\((?:&({GLOBAL}) \+ ({INDEX}) \* (0x[0-9a-f]+|\
 
 
 def global_fields(header, body):
-    """*(&g + 0xc) lee el byte 0xc de g: g.field_0xc. *(&g + i * 8 + 4) es el campo 4 del elemento i de un
-    array de elementos de 8 bytes: g[i].field_0x4. Escrito así parecería aritmética de pointers de C, que
-    contaría elementos enteros. Si en la función se ve que g tiene elementos de 0x24 bytes, g.field_0x44 es
-    g[1].field_0x20: el compilador ya hizo la cuenta con un índice fijo."""
+    """*(&g + 0xc) lee el byte 0xc de g: g.field_0xc. *(&g + i * 8 + 4) es el
+    campo 4 del elemento i de un array de elementos de 8 bytes: g[i].field_0x4.
+    Escrito así parecería aritmética de pointers de C, que contaría elementos
+    enteros. Si en la función se ve que g tiene elementos de 0x24 bytes,
+    g.field_0x44 es g[1].field_0x20: el compilador ya hizo la cuenta con un
+    índice fijo."""
     sizes = {}
     for match in GLOBAL_ELEMENT.finditer(body):
         name, size = (match[1], match[3]) if match[1] else (match[6], match[5])
@@ -2565,7 +2833,8 @@ def global_fields(header, body):
 
 
 def rename_register_locals(header, body):
-    """arg1_01 sin ser un parámetro es una variable más: Ghidra la llama así porque usa el register de arg1.
+    """arg1_01 sin ser un parámetro es una variable más: Ghidra la llama así
+    porque usa el register de arg1.
     Pasa a llamarse como las demás, por su tipo: uVar18."""
     for name in re.findall(r"^(?![ \t]*return\b)[ \t]*[\w ]+?\**\b(arg\d+(?:_\d+)?);$", body, re.M):
         kind = declared_type(body, name)
@@ -2575,7 +2844,8 @@ def rename_register_locals(header, body):
 
 
 def float_constants(text):
-    """0x3f800000 es 1.0f si como float es un número redondo. Con un solo bit a 1, como 0x40000000, puede ser una marca."""
+    """0x3f800000 es 1.0f si como float es un número redondo. Con un solo bit a
+    1, como 0x40000000, puede ser una marca."""
     def replace(match):
         value = int(match[0], 16)
         text = constant_text(value)
@@ -2596,19 +2866,23 @@ def tidy(text):
     text = re.sub(r"\((int|uint|float|double)\)\(([\w:.>-]+)\)", r"(\1)\2", text)
     text = re.sub(r"^([ \t]*[^\s=][^=\n]*?) \+= -(\S+;)$", r"\1 -= \2", text, flags=re.M)
     text = re.sub(r" \+ -(0x[0-9a-f]+|\d+)\b", r" - \1", text)
-    # 0x41c64e6d * x + 0x3039 pasa a x * 0x41c64e6d + 0x3039: la constante detrás, como se escribe a mano.
+    # 0x41c64e6d * x + 0x3039 pasa a x * 0x41c64e6d + 0x3039: la constante
+    # detrás, como se escribe a mano.
     operand = r"\*?[A-Za-z_][\w:.]*(?:\[[^\[\]\n]*\]|->\w+)*"
     text = re.sub(rf'"[^"\n]*"|(^|[(,] ?|[=!<>]=? |[-+&|^] |return )(0x[0-9a-f]+|\d+) \* ({operand})(?![\w(\[.>])',
                   lambda m: m[0] if m[0].startswith('"') else f"{m[1]}{m[3]} * {m[2]}", text, flags=re.M)
-    # 0xfff0fff7 & x pasa a x & 0xfff0fff7. Solo tras =, ( o una coma, y con algo que no ligue más detrás:
+    # 0xfff0fff7 & x pasa a x & 0xfff0fff7. Solo tras =, ( o una coma, y con
+    # algo que no ligue más detrás:
     # a == 0xff & x es (a == 0xff) & x, y no se puede cambiar.
     text = re.sub(rf'"[^"\n]*"|((?:^|(?<![=!<>])= |[(,] ?|return |&& |\|\| ))(0x[0-9a-f]+|\d+) ([&|^]) ({operand})'
                   r"(?=;|\)|,| [&|^] | && | \|\| )",
                   lambda m: m[0] if m[0].startswith('"') else f"{m[1]}{m[4]} {m[3]} {m[2]}", text, flags=re.M)
-    # -(c) | 0xb4 vale -1 si c se cumple, y 0xb4 si no: el compilador evita así un salto.
+    # -(c) | 0xb4 vale -1 si c se cumple, y 0xb4 si no: el compilador evita así
+    # un salto.
     text = re.sub(r"(= |return )-\(([^()\n]+)\) \| (0x[0-9a-f]+|\d+);", r"\1(\2) ? -1 : \3;", text)
-    # ((x >> 0x1f) >> 0x11) + x >> 0xf es x / 0x8000 con signo: el compilador suma 0x7fff a los negativos
-    # para que la división redondee hacia 0, como en C.
+    # ((x >> 0x1f) >> 0x11) + x >> 0xf es x / 0x8000 con signo: el compilador
+    # suma 0x7fff a los negativos para que la división redondee hacia 0, como en
+    # C.
     def signed_division(match):
         shift, right = int(match[2], 0), int(match[3], 0)
         return f"{match[1]} / {1 << right:#x}" if shift + right == 32 else match[0]
@@ -2620,7 +2894,8 @@ def tidy(text):
     text = re.sub(r"^(\w[^\n]*\))\n+\{\n", r"\1 {\n", text, flags=re.M)
     text = re.sub(r"\n    return;\n\}", "\n}", text)
     text = re.sub(r"\{\n\n", "{\n", text)
-    # Un constructor no tiene tipo, y el return this solo existe por la convención de ARM.
+    # Un constructor no tiene tipo, y el return this solo existe por la
+    # convención de ARM.
     text = re.sub(r"^((?:\w+::)*(\w+)::\2\([^()\n]*\) \{\n)", r"\1", text, flags=re.M)
     text = re.sub(r"^\w[\w *]*[ *]((?:\w+::)*(\w+)::~?\2\([^()\n]*\) \{)", r"\1", text, flags=re.M)
     text = re.sub(r"^((?:\w+::)*(\w+)::\2\([^()\n]*\) \{\n(?:.*\n)*?)    return this;\n\}", r"\1}", text, flags=re.M)
@@ -2629,17 +2904,21 @@ def tidy(text):
 
 def clean(text, names, library, own, force_jni):
     text = re.sub(r"\(\*\*\*([\w\[\]]+)\)\(", r"(**(*\1 + 0x0))(", unwrap_lines(text))
-    text = re.sub(r"^([ \t]*(?:if|while|for|else if)\b.*\))\n[ \t]*\{$", r"\1 {", text, flags=re.M)   # if (...)\n{
-    # Ghidra escribe en decimal los offsets menores de 10: (**(*x + 4))() es la entrada 0x4.
+    # if (...)\n{
+    text = re.sub(r"^([ \t]*(?:if|while|for|else if)\b.*\))\n[ \t]*\{$", r"\1 {", text, flags=re.M)
+    # Ghidra escribe en decimal los offsets menores de 10: (**(*x + 4))() es la
+    # entrada 0x4.
     text = re.sub(r"\*\(\*([\w\[\]]+) \+ (\d+)\)", lambda m: f"*(*{m[1]} + {int(m[2]):#x})", text)
     if library:
         text = resolve_kuser_helpers(text, library)
         text = resolve_literals(text, library)
         text = resolve_got(text, library)
         text = resolve_split_literals(text, library)
-        text = resolve_got(text, library)     # la base de la GOT puede venir de un literal partido
+        text = resolve_got(text, library)     # la base de la GOT puede venir de
+                                              # un literal partido
         text = resolve_words(text, library)
-        text = resolve_got(text, library)     # y su offset, de un literal ya leído
+        text = resolve_got(text, library)     # y su offset, de un literal ya
+                                              # leído
     text = drop_leftovers(text)
     text, renames = name_calls(text, names, force_jni)
     text, called, targets = name_methods(text, library)
@@ -2650,7 +2929,8 @@ def clean(text, names, library, own, force_jni):
     text = each_function(text, fake_registers)
 
     def read_argument(caller, callee, register, order=None):
-        """Un argumento según las instrucciones del .so, si caller y callee tienen una sola dirección."""
+        """Un argumento según las instrucciones del .so, si caller y callee
+        tienen una sola dirección."""
         callers, callees = targets.get(caller, {}), targets.get(callee, {})
         if not library or len(callers) != 1 or len(callees) != 1:
             return None
@@ -2659,7 +2939,8 @@ def clean(text, names, library, own, force_jni):
     text = each_function(text, lambda header, body: header[0] + fill_jni_calls(header, body, read_argument))
 
     def read_helper(caller, helper, register, order):
-        """Como read_argument, para las funciones del compilador: no llevan comentario con su dirección."""
+        """Como read_argument, para las funciones del compilador: no llevan
+        comentario con su dirección."""
         callers, found = targets.get(caller, {}), library.function(f"sym.{helper}") if library else None
         if not found or found[2] is None or len(callers) != 1:
             return None
@@ -2681,7 +2962,8 @@ def clean(text, names, library, own, force_jni):
     text = each_function(text, split_float_variables)
     text = re.sub(r"\*this\b(?! = &vtable)", "this->field_0x0", type_floats(text))
     found = True
-    while found:   # *(*(x + 0x8c) + 8) es x->field_0x8c->field_0x8: de dentro hacia afuera
+    while found:   # *(*(x + 0x8c) + 8) es x->field_0x8c->field_0x8: de dentro
+                   # hacia afuera
         text, found = FIELD.subn(lambda m: f"{m[1]}->field_{int(m[2], 0):#x}", text)
     text = each_function(array_element(text), global_fields)
     text = each_function(text, rename_register_locals)
@@ -2695,7 +2977,8 @@ def main():
     parser.add_argument("--jni", action="store_true", help="treat every call through a table as JNI")
     parser.add_argument("--rules", help=f"the rules file with your symbols (default: {DEFAULT_RULES}, if it exists)")
     options = parser.parse_args()
-    text = re.sub(r"\x1b\[[0-9;]*m", "", sys.stdin.read())   # radare2 puede añadir colores
+    # radare2 puede añadir colores
+    text = re.sub(r"\x1b\[[0-9;]*m", "", sys.stdin.read())
     library = Library(options.so) if options.so else None
     rules = options.rules or (DEFAULT_RULES if os.path.exists(DEFAULT_RULES) else None)
     try:
@@ -2703,7 +2986,8 @@ def main():
     except OSError as problem:
         sys.exit(f"cannot read the rules file: {problem}")
     names = read_names(options.names)
-    # Cada función por separado: Ghidra repite nombres como iVar1, y cada una puede usar JNI o no.
+    # Cada función por separado: Ghidra repite nombres como iVar1, y cada una
+    # puede usar JNI o no.
     starts = [match.start() for match in HEADER.finditer(text)]
     pieces = [text[a:b] for a, b in zip([0] + starts, starts + [len(text)])]
     sys.stdout.write("".join(clean(piece, names, library, own, options.jni) for piece in pieces))

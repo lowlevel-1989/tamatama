@@ -1,5 +1,6 @@
-/* android_emu/jni_names.h: las 233 funciones de JNI, en el orden fijo de la tabla (índices 0 a
-   232). Cada una ocupa 4 bytes, de modo que su offset en el binario es su índice por 4:
+/* android_emu/jni_names.h: las 233 funciones de JNI, en el orden fijo de la
+   tabla (índices 0 a 232). Cada una ocupa 4 bytes, de modo que su offset en el
+   binario es su índice por 4:
    RegisterNatives, índice 215, está en 0x35C. */
 static const char *const jni_names[] = {
     "reserved0", "reserved1", "reserved2", "reserved3", "GetVersion", "DefineClass",

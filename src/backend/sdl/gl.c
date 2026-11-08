@@ -1,20 +1,22 @@
-/* backend/sdl/gl.c: una referencia de cómo traducir las funciones GLES1 que llama el .so a la OpenGL
-   de tu PC, con un ejemplo de cada tipo de argumento. Para añadir otra: copia el ejemplo que se le
-   parezca y añade su línea a backend/gl_table.h. Las que falten salen en el informe como
+/* backend/sdl/gl.c: una referencia de cómo traducir las funciones GLES1 que
+   llama el .so a la OpenGL de tu PC, con un ejemplo de cada tipo de argumento.
+   Para añadir otra: copia el ejemplo que se le parezca y añade su línea a
+   backend/gl_table.h. Las que falten salen en el informe como
    UNIMPLEMENTED. */
 #define GL_GLEXT_PROTOTYPES 1
 #include <GL/gl.h>
 #include <GL/glext.h>
 #include "common.h"
 
-/* Los argumentos de GLES1 ocupan una palabra cada uno: los cuatro primeros van en r0-r3 y los
-   demás en el stack, así que basta con su posición. */
+/* Los argumentos de GLES1 ocupan una palabra cada uno: los cuatro primeros van
+   en r0-r3 y los demás en el stack, así que basta con su posición. */
 static uint32_t arg_word(const Regs *r, int i) { return i < 4 ? r->r[i] : stack_arg(r, i - 4); }
 static float arg_float(const Regs *r, int i) { return bits_to_float(arg_word(r, i)); }
 /* Punto fijo 16.16: 65536 significa 1,0. */
 static float arg_fixed(const Regs *r, int i) { return (float)(int32_t)arg_word(r, i) / 65536.0f; }
-/* Una dirección de la arena se convierte en un pointer de aquí. Cualquier otro valor se pasa tal
-   cual, porque con un VBO activo es un offset, y 0 significa NULL. */
+/* Una dirección de la arena se convierte en un pointer de aquí. Cualquier otro
+   valor se pasa tal cual, porque con un VBO activo es un offset, y 0 significa
+   NULL. */
 static void *arg_ptr(const Regs *r, int i) {
     uint32_t address = arg_word(r, i);
 #ifdef __arm__
@@ -23,7 +25,8 @@ static void *arg_ptr(const Regs *r, int i) {
     return address - arena_arm < ARENA_BYTES ? to_local(address) : (void *)(uintptr_t)address;
 #endif
 }
-/* OpenGL de escritorio no admite arrays GL_FIXED. Se avisa una vez, porque no dibujarían nada. */
+/* OpenGL de escritorio no admite arrays GL_FIXED. Se avisa una vez, porque no
+   dibujarían nada. */
 static void check_array_type(uint32_t type) {
     static int warned;
     if (type == 0x140C && !warned) {

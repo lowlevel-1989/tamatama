@@ -11,7 +11,8 @@
 @   r2 = arg
 
     .syntax unified
-    .arm                                @ modo ARM, válido desde ARMv5TE: Raspberry Pi y QEMU
+    .arm                                @ modo ARM, válido desde ARMv5TE:
+                                        @ Raspberry Pi y QEMU
     .text
 
     .globl switch_stack

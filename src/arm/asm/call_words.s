@@ -17,7 +17,8 @@
 @   r2 = n
 
     .syntax unified
-    .arm                                @ modo ARM, válido desde ARMv5TE: Raspberry Pi y QEMU
+    .arm                                @ modo ARM, válido desde ARMv5TE:
+                                        @ Raspberry Pi y QEMU
     .text
 
     .globl call_words
@@ -50,8 +51,10 @@ call_words:
     bne  .Lcopy_stack_args
 
 .Lload_registers:
-    ldm  r5, {r0, r1, r2, r3}           @ r0-r3 = words[0..3]; si n < 4, fn no mira los demás
-    blx  r4                             @ llama a fn; el resultado queda en r0 y r1
+    ldm  r5, {r0, r1, r2, r3}           @ r0-r3 = words[0..3]; si n < 4, fn no
+                                        @ mira los demás
+    blx  r4                             @ llama a fn; el resultado queda en r0 y
+                                        @ r1
 
     mov  sp, r11                        @ quita los argumentos del stack
     pop  {r4, r5, r6, r7, r11, pc}      @ restaura los registers y vuelve

@@ -1,12 +1,14 @@
-/* port/natives/device.c: Device_PrintMessage es un printf del juego, así que cada argumento se lee según lo
-   que pida el formato. Un printf normal no serviría: los argumentos están en los registers y el stack
-   de ARM, no en los de este programa. */
+/* port/natives/device.c: Device_PrintMessage es un printf del juego, así que
+   cada argumento se lee según lo que pida el formato. Un printf normal no
+   serviría: los argumentos están en los registers y el stack de ARM, no en los
+   de este programa. */
 #include "common.h"
 
 /* La palabra número i de los argumentos: r0-r3 y después el stack. */
 static uint32_t arg_word(const Regs *r, int i) { return i < 4 ? r->r[i] : stack_arg(r, i - 4); }
 
-/* Un valor de 64 bits va en dos palabras, y siempre empieza en una posición par. */
+/* Un valor de 64 bits va en dos palabras, y siempre empieza en una posición
+   par. */
 static uint64_t next_wide(const Regs *r, int *next) {
     *next += *next & 1;
     uint64_t value = arg_word(r, *next) | ((uint64_t)arg_word(r, *next + 1) << 32);
@@ -23,7 +25,8 @@ void native_Device_PrintMessage(Regs *r) {
             out[used++] = *p++;
             continue;
         }
-        /* Copia las opciones y el ancho, sin l, h ni z: aquí cada tamaño tiene su propio tipo. */
+        /* Copia las opciones y el ancho, sin l, h ni z: aquí cada tamaño tiene
+           su propio tipo. */
         char spec[32] = "%";
         size_t n = 1;
         int longs = 0;
@@ -74,7 +77,8 @@ void native_Device_PrintMessage(Regs *r) {
         case 'f':
         case 'g':
         case 'e': {
-            uint64_t bits = next_wide(r, &next); /* en ... un float siempre llega como double */
+            uint64_t bits = next_wide(r, &next); /* en ... un float siempre
+                                                    llega como double */
             double value;
             memcpy(&value, &bits, sizeof value);
             snprintf(spec + n, 8, "%c", kind);

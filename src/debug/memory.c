@@ -50,7 +50,8 @@ arm_ptr place_start(const char *place) {
     if (place[0] == '0' && place[1] == 'x') return parse_number(place);
     char name[256];
     snprintf(name, sizeof name, "%.*s", (int)strcspn(place, "+-"), place);
-    const char *own = symbol_place(name); /* los tuyos, y después los que exporta el .so */
+    const char *own = symbol_place(name); /* los tuyos, y después los que
+                                             exporta el .so */
     return own ? place_resolve(own) : arm_symbol(name);
 }
 /* Recorre el resto del lugar desde address, igual que en C:
@@ -59,7 +60,8 @@ arm_ptr place_start(const char *place) {
      ->0x18   lee un pointer en la dirección actual y le suma 0x18
    Devuelve 0 si algún pointer no se puede leer. */
 arm_ptr place_follow(arm_ptr address, const char *place) {
-    if (!address) return 0; /* un símbolo que aún no existe: se volverá a preguntar */
+    if (!address) return 0; /* un símbolo que aún no existe: se volverá a
+                               preguntar */
     for (const char *p = place + strcspn(place, "+-"); *p; p += strcspn(p + 1, "+-") + 1) {
         if (*p == '+') {
             address += parse_number(p + 1);

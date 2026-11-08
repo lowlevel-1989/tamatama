@@ -1,13 +1,15 @@
-/* platform/linux/platform.c: la plataforma Linux, para el PC y la Raspberry Pi. Implementa
-   platform/platform.h:
+/* platform/linux/platform.c: la plataforma Linux, para el PC y la Raspberry Pi.
+   Implementa platform/platform.h:
 
      base_dir()      la carpeta de la que cuelgan resources/, apk/ y loader-arm
      apk_each(use)   los .apk que puede haber aportado el usuario
      apk_hint()      cómo aportarlo: copiarlo en {base_dir}/apk/
-     data_dir()      {base_dir}/resources: aquí la carpeta del programa se puede escribir
+     data_dir()      {base_dir}/resources: aquí la carpeta del programa se puede
+                     escribir
      platform_log()  los mensajes, por stderr */
-/* Offsets de 64 bits en readdir y fopen también en ARM de 32 bits: si no, bajo QEMU
-   readdir falla con las carpetas de ext4 y no se abren ficheros de más de 2 GiB. */
+/* Offsets de 64 bits en readdir y fopen también en ARM de 32 bits: si no, bajo
+   QEMU readdir falla con las carpetas de ext4 y no se abren ficheros de más de
+   2 GiB. */
 #define _FILE_OFFSET_BITS 64
 #include "common.h"
 #include "platform.h"
@@ -15,8 +17,9 @@
 #include <limits.h>
 #include <unistd.h>
 
-/* La carpeta del ejecutable, sin la barra final. Se calcula una vez: /proc/self/exe es el
-   programa en ejecución (bajo QEMU, qemu-arm responde con la ruta de loader-arm). */
+/* La carpeta del ejecutable, sin la barra final. Se calcula una vez:
+   /proc/self/exe es el programa en ejecución (bajo QEMU, qemu-arm responde con
+   la ruta de loader-arm). */
 const char *base_dir(void) {
     static char dir[PATH_MAX];
     if (!dir[0]) {
@@ -36,8 +39,8 @@ static int is_apk(const struct dirent *e) {
     return n > 4 && !strcmp(e->d_name + n - 4, ".apk");
 }
 
-/* Prueba los *.apk de {base}/apk/, en orden alfabético para que el resultado no dependa del
-   disco, hasta que use devuelva 1. Devuelve 1 si alguno valió. */
+/* Prueba los *.apk de {base}/apk/, en orden alfabético para que el resultado no
+   dependa del disco, hasta que use devuelva 1. Devuelve 1 si alguno valió. */
 int apk_each(int (*use)(const char *path)) {
     char dir[PATH_MAX], path[PATH_MAX];
     if (snprintf(dir, sizeof dir, "%s/apk", base_dir()) >= (int)sizeof dir) return 0;

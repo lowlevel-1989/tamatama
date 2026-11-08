@@ -1,4 +1,5 @@
-/* android_emu/known_args.c: los nombres de los argumentos de las funciones conocidas, para los
+/* android_emu/known_args.c: los nombres de los argumentos de las funciones
+   conocidas, para los
  * mensajes [UNIMPLEMENTED] y [trace] de arm/hooks.c.
  *
  * Una función que no esté aquí muestra sus cuatro registers, sin nombres.
@@ -21,7 +22,8 @@ static const KnownArgs known[] = {
     {"__gnu_Unwind_Find_exidx", {"pc", "&count"}},
     {"dl_unwind_find_exidx", {"pc", "&count"}},
 
-    /* JavaVM: el primer argumento siempre es JavaVM. &JNIEnv es la dirección donde se escribe el
+    /* JavaVM: el primer argumento siempre es JavaVM. &JNIEnv es la dirección
+       donde se escribe el
        JNIEnv, no el JNIEnv. */
     {"VM:DestroyJavaVM", {"JavaVM"}},
     {"VM:AttachCurrentThread", {"JavaVM", "&JNIEnv", "args"}},
@@ -29,8 +31,8 @@ static const KnownArgs known[] = {
     {"VM:GetEnv", {"JavaVM", "&JNIEnv", "version"}},
     {"VM:AttachCurrentThreadAsDaemon", {"JavaVM", "&JNIEnv", "args"}},
 
-    /* JNI: el primer argumento siempre es JNIEnv, en el orden de jni_names.h. &JavaVM es la
-       dirección donde se escribe el JavaVM. */
+    /* JNI: el primer argumento siempre es JNIEnv, en el orden de jni_names.h.
+       &JavaVM es la dirección donde se escribe el JavaVM. */
     {"JNI:GetVersion", {"JNIEnv"}},
     {"JNI:DefineClass", {"JNIEnv", "name", "loader", "buf", "len"}},
     {"JNI:FindClass", {"JNIEnv", "name"}},
@@ -262,7 +264,8 @@ static const KnownArgs known[] = {
     {"JNI:GetObjectRefType", {"JNIEnv", "obj"}},
 };
 
-/* Los nombres de los argumentos de una función, terminados en NULL, o NULL si no se conocen. */
+/* Los nombres de los argumentos de una función, terminados en NULL, o NULL si
+   no se conocen. */
 const char *const *known_args(const char *name) {
     for (unsigned i = 0; i < sizeof known / sizeof known[0]; i++)
         if (!strcmp(known[i].name, name)) return known[i].args;

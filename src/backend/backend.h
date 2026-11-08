@@ -1,8 +1,10 @@
-/* backend/backend.h: lo que el programa necesita de la plataforma. Tu código solo conoce esto. Cada
-   carpeta de backend define estas funciones, y el Makefile compila una sola:
+/* backend/backend.h: lo que el programa necesita de la plataforma. Tu código
+   solo conoce esto. Cada carpeta de backend define estas funciones, y el
+   Makefile compila una sola:
      sdl    ventana y OpenGL reales
      dummy  sin ventana y sin dibujo: no necesita ninguna library
-     soft   sin ventana, dibuja en memoria: lo usa la demo para comparar imágenes */
+     soft   sin ventana, dibuja en memoria: lo usa la demo para comparar
+            imágenes */
 #pragma once
 
 /* Abre la ventana y prepara la imagen. Va antes de llamar al juego. */
