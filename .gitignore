@@ -1,0 +1,16 @@
+# Lo que genera make
+/loader
+/loader-arm
+/obj/
+
+# La libc ARM que descarga el Makefile
+/sysroot/
+
+# El juego: el .apk y lo que se extrae de él
+/apk/
+/apks/
+/resources/
+
+# Lo que deja una ejecución
+*.core
+__pycache__/

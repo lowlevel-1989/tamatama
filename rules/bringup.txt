@@ -1,0 +1,29 @@
+# Reglas tempranas para el arranque del port y reversing
+#
+# El nombre de la regla es por lo siguiente:
+# bring-up es la fase de hacer arrancar algo por primera vez: una placa nueva, un sistema o un port.
+
+symbol g_game                 @0xC2598
+symbol g_screen_scale         @0xBD010
+symbol g_reload_counter       @0xbfa90
+symbol g_real_width           @0xBD01C
+symbol g_real_height          @0xBD020
+symbol g_bgm_volume           @0xC2D4C
+symbol g_se_volume            @0xC2D50
+symbol gm_smartpSystemStatus  @0xC2D64
+symbol m_rand                 @0xc01c4
+
+symbol string_assign          @0x7cfc5
+symbol string_clone           @0x7c8e5
+symbol string_dispose         @0x7bdc1
+
+# exit   _CameraSetBaseScreen   @0x3edd1
+
+stub   ApplyCamera            @0x3ed41
+stub   MvFrameWorkInit        @0x52b3d
+
+watch m_rand            m_rand                      u32
+watch var_bgm_volume    g_bgm_volume                f32
+watch var_se_volume     g_se_volume                 f32
+watch gm_bgm_volume     gm_smartpSystemStatus+0x83   u8
+watch gm_se_volume      gm_smartpSystemStatus+0x84   u8
