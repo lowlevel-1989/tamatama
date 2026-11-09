@@ -81,7 +81,7 @@ make
 Dependencies on Fedora:
 
 ```
-sudo dnf install make gcc gcc-c++ clang lld qemu-user curl xz binutils tar SDL2-devel mesa-libGL-devel
+sudo dnf install make gcc gcc-c++ clang lld qemu-user curl xz binutils tar SDL2-devel SDL2_mixer-devel fdk-aac-free-devel mesa-libGL-devel
 ```
 
 The first time, it downloads an ARM libc from Debian into `sysroot/`. Options:

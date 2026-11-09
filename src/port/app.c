@@ -1,24 +1,26 @@
 #include "common.h"
 #include "backend.h"
+#include "methods.h"
+#include "touch.h"
 
-#define METHOD(name) "Java_com_namcobandaigames_tamagotchisp_SampleGameNatives_" name
-
-// El juego no debería mirar dentro de jclass.
-#define FAKE_JCLASS 0x1000u
+// La pantalla del juego es de 320x480, pero la ventana se abre a SCALE veces
+// ese tamaño. init recibe el tamaño real, como en Android, y el .so escala
+// sus coordenadas; el backend dibuja siempre en 320x480 y GL lo amplía.
 #define WIDTH 320
 #define HEIGHT 480
+#define SCALE 1
 
 extern int reload_counter;
 
 int app_main(void) {
     arm_ptr env = arm_jni_env();
-    backend_init(WIDTH, HEIGHT);
+    backend_init(WIDTH * SCALE, HEIGHT * SCALE);
 
     // deberia actualizar cada que cambia el tamaño de la pantalla. Va antes de
     // init: backend_init ya ha creado la ventana, así que init ve 1.
     reload_counter = 1;
 
-    uint32_t init_args[4] = {env, FAKE_JCLASS, WIDTH, HEIGHT};
+    uint32_t init_args[4] = {env, FAKE_JCLASS, WIDTH * SCALE, HEIGHT * SCALE};
 
     // Ejecuta el gameloop original
     call_method(METHOD("init"), init_args, 4);
@@ -41,6 +43,7 @@ int app_main(void) {
 
     while (!backend_should_close()) {
         backend_process_events();
+        touch_update(env); /* el ratón como un dedo */
         backend_begin_frame();
         call_method(METHOD("step"), no_args, 2);
         backend_swap_buffers();

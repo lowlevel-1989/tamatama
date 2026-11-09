@@ -6,6 +6,7 @@
      soft   sin ventana, dibuja en memoria: lo usa la demo para comparar
             imágenes */
 #pragma once
+#include <stddef.h>
 
 /* Abre la ventana y prepara la imagen. Va antes de llamar al juego. */
 void backend_init(int width, int height);
@@ -30,3 +31,16 @@ void backend_cleanup(void);
 int backend_texture_create(const unsigned char *rgba, int width, int height);
 /* Borra la textura de GL con ese nombre. */
 void backend_texture_delete(int gl_name);
+
+/* El sonido. Cargar el fichero es cosa del juego (src/port/game/sound.c): el
+   backend solo lo decodifica y lo hace sonar. music = 1 para la música, que
+   suena de una en una; 0 para un efecto, que puede sonar con otros. */
+/* Devuelve un handle desde 1, o 0 si no se pudo. data se puede liberar
+   después. */
+int backend_sound_load(const void *data, size_t size, int music);
+void backend_sound_play(int handle, int loop);
+void backend_sound_stop(int handle);
+/* 1 mientras suena */
+int backend_sound_playing(int handle);
+/* el volumen de toda la música o de todos los efectos, de 0 a 1 */
+void backend_sound_volume(int music, float volume);

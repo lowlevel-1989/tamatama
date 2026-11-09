@@ -33,3 +33,23 @@ int backend_texture_create(const unsigned char *rgba, int width, int height) {
 }
 /* Sin GL no hay nada que borrar. */
 void backend_texture_delete(int gl_name) { (void)gl_name; }
+/* Sin audio: los sonidos no se cargan y nunca están sonando. */
+int backend_sound_load(const void *data, size_t size, int music) {
+    (void)data;
+    (void)size;
+    (void)music;
+    return 0;
+}
+void backend_sound_play(int handle, int loop) {
+    (void)handle;
+    (void)loop;
+}
+void backend_sound_stop(int handle) { (void)handle; }
+int backend_sound_playing(int handle) {
+    (void)handle;
+    return 0;
+}
+void backend_sound_volume(int music, float volume) {
+    (void)music;
+    (void)volume;
+}

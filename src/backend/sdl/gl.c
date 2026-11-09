@@ -75,3 +75,10 @@ void native_glRotatef(Regs *r) { glRotatef(arg_float(r, 0), arg_float(r, 1), arg
 void native_glColor4f(Regs *r) { glColor4f(arg_float(r, 0), arg_float(r, 1), arg_float(r, 2), arg_float(r, 3)); }
 void native_glPushMatrix(Regs *r) { (void)r; glPushMatrix(); }
 void native_glPopMatrix(Regs *r) { (void)r; glPopMatrix(); }
+
+/* La cámara del .so (Camera::ApplyCamera): elige la matriz y la proyección.
+   glOrthof lleva seis float: los cuatro primeros en r0-r3 y los dos últimos en
+   el stack. */
+void native_glMatrixMode(Regs *r) { glMatrixMode(arg_word(r, 0)); }
+void native_glLoadIdentity(Regs *r) { (void)r; glLoadIdentity(); }
+void native_glOrthof(Regs *r) { glOrtho(arg_float(r, 0), arg_float(r, 1), arg_float(r, 2), arg_float(r, 3), arg_float(r, 4), arg_float(r, 5)); }

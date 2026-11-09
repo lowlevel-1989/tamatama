@@ -79,7 +79,7 @@ make
 Dependencias en Fedora:
 
 ```
-sudo dnf install make gcc gcc-c++ clang lld qemu-user curl xz binutils tar SDL2-devel mesa-libGL-devel
+sudo dnf install make gcc gcc-c++ clang lld qemu-user curl xz binutils tar SDL2-devel SDL2_mixer-devel fdk-aac-free-devel mesa-libGL-devel
 ```
 
 La primera vez descarga una libc ARM de Debian en `sysroot/`. Opciones:

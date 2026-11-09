@@ -30,7 +30,11 @@ void backend_init(int width, int height) {
     context = SDL_GL_CreateContext(window);
     if (!context) die_sdl("SDL_GL_CreateContext");
     SDL_GL_SetSwapInterval(1);
-    glViewport(0, 0, width, height); /* toda la ventana */
+    /* Toda la ventana, en sus píxeles reales: con el escalado de pantalla de
+       Wayland pueden ser más que su tamaño. */
+    int pixels_w, pixels_h;
+    SDL_GL_GetDrawableSize(window, &pixels_w, &pixels_h);
+    glViewport(0, 0, pixels_w, pixels_h);
 }
 
 /* Lo que espera el .so al empezar cada imagen:
