@@ -769,6 +769,29 @@ def resolve_split_literals(text, library):
     return read_addresses(text, library)
 
 
+def resolve_got_loads(text, library):
+    """puVar8 = &DAT_bcab4; ... puVar8 = *puVar8;: la entrada de la GOT se lee
+    en dos pasos, con la variable en medio. Es puVar8 = &la_global, si entre
+    medias nada más usa la variable."""
+    lines = text.split("\n")
+    for index, line in enumerate(lines):
+        slot = re.fullmatch(r"([ \t]*)(\w+Var\d+) = &DAT_([0-9a-f]+);", line)
+        target = library.slot_text(int(slot[3], 16)) if slot else None
+        if not target:
+            continue
+        for later in range(index + 1, len(lines)):
+            if re.search(r"^\s*\w+:$|\bgoto\b|^\s*(?:\}|while|for|do|switch)\b", lines[later]):
+                break
+            if not re.search(rf"\b{slot[2]}\b", lines[later]):
+                continue
+            load = re.fullmatch(rf"([ \t]*){slot[2]} = \*{slot[2]};", lines[later])
+            if load:
+                lines[later] = f"{load[1]}{slot[2]} = {target};"
+                lines[index] = None
+            break
+    return "\n".join(line for line in lines if line is not None)
+
+
 def resolve_words(text, library):
     """*0x515f0 lee una palabra del .so, normalmente una constante que no cabe
     en una instrucción."""
@@ -2093,7 +2116,17 @@ def name_timeb(body):
         body = re.sub(rf"^(?![ \t]*return\b)[ \t]*[\w ]+\*?\b{name}(?: \[\w+\])?;\n", "", body, flags=re.M)
         body = re.sub(rf"\b{name}\b", f"{call[1]}.{field}", body)
     declaration = rf"^(?![ \t]*return\b)([ \t]*)[\w ]+\*?\b{call[1]}(?: \[\w+\])?;$"
-    return re.sub(declaration, rf"\1struct timeb {call[1]};", body, flags=re.M)
+    body = re.sub(declaration, rf"\1struct timeb {call[1]};", body, flags=re.M)
+    # La propia variable, usada como valor, es su primer campo: time. No se
+    # tocan &local (la llamada a ftime) ni la declaración.
+    lines = []
+    for line in body.split("\n"):
+        if not line.lstrip().startswith(("struct timeb", "//")):
+            line = re.sub(rf"(?<![&\w.]){call[1]}\b(?!\.)", f"{call[1]}.time", line)
+        lines.append(line)
+    body = "\n".join(lines)
+    # millitm es de 16 bits: el & 0xffff que deja Ghidra sobra.
+    return re.sub(rf"\({call[1]}\.millitm & 0xffff\)", f"{call[1]}.millitm", body)
 
 
 def negate(condition):
@@ -2766,18 +2799,27 @@ def split_float_variables(header, body):
 
 def type_floats(body):
     """Una variable a la que solo se le asignan valores float es float, aunque
-    Ghidra diga otra cosa."""
+    Ghidra diga otra cosa: también int32_t iVar3 o void *puVar9. Si su nombre
+    de Ghidra dice otro tipo (iVar, puVar...), pasa a fVar, como en
+    split_float_variables."""
     known = set(re.findall(r"^[ \t]*float (\w+);$", body, re.M))
+    renames = {}
     for _ in range(3):
-        for kind, name in re.findall(r"^(?![ \t]*return\b)[ \t]*([\w ]+?) (\w+);$", body, re.M):
+        for kind, name in re.findall(r"^(?![ \t]*return\b)[ \t]*([\w ]+?) \*?(\w+);$", body, re.M):
             values = re.findall(rf"^[ \t]*{name} = (.+);$", body, re.M)
             def is_float(value):
-                return (value.startswith("(float)") or re.search(r"\d\.\d*f\b", value)
+                return ("(float)" in value or re.search(r"\d\.\d*f\b", value)
                         or any(re.search(rf"\b{other}\b", value) for other in known)) and "(int)" not in value \
                         and not re.search(r" (?:[<>]=?|[=!]=) ", value)
             if values and kind != "float" and all(is_float(value) for value in values):
                 known.add(name)
-                body = re.sub(rf"^(?![ \t]*return\b)([ \t]*)[\w ]+ {name};$", rf"\1float {name};", body, flags=re.M)
+                body = re.sub(rf"^(?![ \t]*return\b)([ \t]*)[\w ]+ \*?{name};$", rf"\1float {name};", body,
+                              flags=re.M)
+                ghidra = re.fullmatch(r"(?!f)[a-z]+Var(\d+)", name)
+                if ghidra and not re.search(rf"\bfVar{ghidra[1]}\b", body):
+                    renames[name] = f"fVar{ghidra[1]}"
+    for name, new in renames.items():
+        body = re.sub(rf"\b{name}\b", new, body)
     return body
 
 
@@ -2860,6 +2902,10 @@ def tidy(text):
     text = re.sub(r"\((-?(?:0x[0-9a-f]+|\d+)) (<=|>=|==|!=|<|>) ([^()&|\n]+)\)",
                   lambda m: f"({m[3]} {swapped[m[2]]} {m[1]})", text)
     text = re.sub(r"((?<![<>])[=!]?= |return )0xffffffff\b", r"\g<1>-1", text)
+    # ((a < b) != 0) es (a < b), y ((a < b) == 0), (a >= b): la comparación ya
+    # vale 1 o 0.
+    text = re.sub(r"\(\(([^()&|\n]+ (?:<=|>=|==|!=|<|>) [^()&|\n]+)\) (!=|==) 0\)",
+                  lambda m: f"({m[1] if m[2] == '!=' else negate(m[1])})", text)
     text = re.sub(r"\b(?:code_r0x|joined_r0x|LAB_)0*([0-9a-f]+)\b", r"L_\1", text)
     text = re.sub(r"^([ \t]*)([^\s=][^=\n]*?) = \2 ([-+*/&|^]) ([^\s;]+);$", r"\1\2 \3= \4;", text, flags=re.M)
     text = re.sub(r"(= |return )\(([^()]*)\);$", r"\1\2;", text, flags=re.M)
@@ -2909,6 +2955,9 @@ def clean(text, names, library, own, force_jni):
     # Ghidra escribe en decimal los offsets menores de 10: (**(*x + 4))() es la
     # entrada 0x4.
     text = re.sub(r"\*\(\*([\w\[\]]+) \+ (\d+)\)", lambda m: f"*(*{m[1]} + {int(m[2]):#x})", text)
+    # *(piVar1 + 1) es piVar1[1]: en un puntero con tipo, + 1 es un elemento,
+    # no un byte. Escrito así, luego se convierte en su campo como piVar1[5].
+    text = re.sub(r"\*\((p+[a-zA-Z]*Var\d+) \+ (0x[0-9a-f]+|\d+)\)", lambda m: f"{m[1]}[{int(m[2], 0)}]", text)
     if library:
         text = resolve_kuser_helpers(text, library)
         text = resolve_literals(text, library)
@@ -2919,6 +2968,7 @@ def clean(text, names, library, own, force_jni):
         text = resolve_words(text, library)
         text = resolve_got(text, library)     # y su offset, de un literal ya
                                               # leído
+        text = resolve_got_loads(text, library)
     text = drop_leftovers(text)
     text, renames = name_calls(text, names, force_jni)
     text, called, targets = name_methods(text, library)

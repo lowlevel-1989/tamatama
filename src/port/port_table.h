@@ -1,8 +1,18 @@
 #define JAVA(method) "com/namcobandaigames/tamagotchisp/SampleGameNatives." method
 
+NATIVE(JAVA("OnGetReloadCounter()I"), native_OnGetReloadCounter)
 NATIVE(JAVA("OnInputStreamOpenLocalFile(Ljava/lang/String;)I"), native_OnInputStreamOpenLocalFile)
 NATIVE(JAVA("OnInputStreamOpenResourceFile(Ljava/lang/String;)I"), native_OnInputStreamOpenResourceFile)
 NATIVE(JAVA("OnInputStreamRead(II)[B"), native_OnInputStreamRead)
+NATIVE(JAVA("OnInputStreamSkip(II)I"), native_OnInputStreamSkip)
+NATIVE(JAVA("OnInputStreamClose(I)I"), native_OnInputStreamClose)
+NATIVE(JAVA("OnReadFile(Ljava/lang/String;II)[B"), native_OnReadFile)
+NATIVE(JAVA("OnLoadTexture(Ljava/lang/String;)I"), native_OnLoadTexture)
+NATIVE(JAVA("OnGetTextureWidth(I)I"), native_OnGetTextureWidth)
+NATIVE(JAVA("OnGetTextureHeight(I)I"), native_OnGetTextureHeight)
+NATIVE(JAVA("OnGetTextureID(I)I"), native_OnGetTextureID)
+NATIVE(JAVA("OnRemoveTexture(I)Z"), native_OnRemoveTexture)
+NATIVE(JAVA("OnGetSystemTime()I"), native_OnGetSystemTime)
 NATIVE(JAVA("OnOutputStreamOpenLocalFile(Ljava/lang/String;)I"), native_OnOutputStreamOpenLocalFile)
 NATIVE(JAVA("OnOutputStreamClose(I)I"), native_OnOutputStreamClose)
 NATIVE(JAVA("OnOutputStreamWrite(I[B)I"), native_OnOutputStreamWrite)

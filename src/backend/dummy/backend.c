@@ -14,6 +14,7 @@ void backend_init(int width, int height) {
     const char *text = getenv("BACKEND_FRAMES");
     if (text) max_frames = (int)parse_number(text);
 }
+void backend_begin_frame(void) {}
 void backend_process_events(void) {}
 void backend_swap_buffers(void) { frames++; }
 int backend_should_close(void) { return frames >= max_frames; }
@@ -22,3 +23,13 @@ int backend_pointer(int *x, int *y) {
     return 0;
 }
 void backend_cleanup(void) {}
+/* Sin GL: la textura se carga y se decodifica, pero no se sube a ningún sitio.
+   0 es la textura vacía. */
+int backend_texture_create(const unsigned char *rgba, int width, int height) {
+    (void)rgba;
+    (void)width;
+    (void)height;
+    return 0;
+}
+/* Sin GL no hay nada que borrar. */
+void backend_texture_delete(int gl_name) { (void)gl_name; }

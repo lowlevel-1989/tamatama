@@ -60,6 +60,33 @@ int resource_open_local(const char *name) {
     return id;
 }
 
+/* El fichero de ese nombre, para leer: la partida guardada si existe y, si no,
+   el asset. Como resource_open_local, sin quedarse con un id. */
+static FILE *open_by_name(const char *name) {
+    FILE *file = fopen(local_path(name), "rb");
+    return file ? file : asset_open(name);
+}
+
+int resource_file_size(const char *name) {
+    FILE *file = open_by_name(name);
+    if (!file) return -1;
+    long size = fseek(file, 0, SEEK_END) ? -1 : ftell(file);
+    fclose(file);
+    return (int)size;
+}
+
+int resource_read_file(const char *name, int offset, void *buffer, int size) {
+    FILE *file = open_by_name(name);
+    if (!file) {
+        log_msg("[resource] read %s: not found\n", name);
+        return -1;
+    }
+    int got = fseek(file, offset, SEEK_SET) ? -1 : (int)fread(buffer, 1, (size_t)size, file);
+    fclose(file);
+    log_msg("[resource] read %s: %d bytes from %d\n", name, got, offset);
+    return got;
+}
+
 int resource_open_asset(const char *name) {
     FILE *file = asset_open(name);
     if (!file) {
@@ -93,6 +120,24 @@ int resource_read(int id, void *buffer, int size) {
     // log_msg("[resource] read %s: id %d, %d of %d bytes\n",
     // resources[id].name, id, got, size);
     return got;
+}
+
+/* Avanza count bytes sin leerlos, como skip en un InputStream de Java: si llega
+   al final, salta lo que quede. Devuelve los bytes saltados, o -1. */
+int resource_skip(int id, int count) {
+    FILE *file = resource_get(id);
+    if (!file) {
+        log_msg("[resource] skip: invalid id %d\n", id);
+        return -1;
+    }
+    if (count <= 0) return 0;
+    long at = ftell(file);
+    if (at < 0 || fseek(file, 0, SEEK_END)) return -1;
+    long end = ftell(file);
+    long left = end > at ? end - at : 0;
+    long skip = count < left ? count : left;
+    if (fseek(file, at + skip, SEEK_SET)) return -1;
+    return (int)skip;
 }
 
 int resource_write(int id, const void *data, int size) {

@@ -96,15 +96,38 @@ static void make_parents(char *path) {
 
 /* Dónde va una entrada del .apk dentro de dir, o 0 si no se extrae. Los .so de
    lib/armeabi/ van todos a libs/, sin sus carpetas; assets/ conserva las
-   suyas. */
+   suyas, y su extensión cambia si está en src/port/asset_table.h. */
+/* Las extensiones de assets que se guardan con otro nombre: una línea
+   ASSET_RENAME(".como_viene", ".como_se_guarda") en src/port/asset_table.h. */
+static const struct {
+    const char *from, *to;
+} asset_renames[] = {
+#define ASSET_RENAME(from, to) {from, to},
+#if __has_include("asset_table.h")
+#include "asset_table.h"
+#endif
+#undef ASSET_RENAME
+    {0, 0}};
+
 static int destination(const char *name, const char *dir, char *out, size_t room) {
     size_t n = strlen(name);
     int written;
     if (!strncmp(name, "lib/armeabi/", 12) && n > 3 && !strcmp(name + n - 3, ".so"))
         written = snprintf(out, room, "%s/libs/%s", dir, strrchr(name, '/') + 1);
-    else if (!strncmp(name, "assets/", 7))
-        written = snprintf(out, room, "%s/%s", dir, name);
-    else
+    else if (!strncmp(name, "assets/", 7)) {
+        /* el nombre, con su extensión cambiada si está en asset_renames */
+        size_t keep = n;
+        const char *extension = "";
+        for (int i = 0; asset_renames[i].from; i++) {
+            size_t from = strlen(asset_renames[i].from);
+            if (n > from && !strcmp(name + n - from, asset_renames[i].from)) {
+                keep = n - from;
+                extension = asset_renames[i].to;
+                break;
+            }
+        }
+        written = snprintf(out, room, "%s/%.*s%s", dir, (int)keep, name, extension);
+    } else
         return 0;
     if (written < 0 || (size_t)written >= room) die("a file name in the apk is too long");
     return 1;

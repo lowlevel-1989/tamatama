@@ -27,6 +27,8 @@
 #                        license
 #   src/third_party/miniz  both programs: miniz, to read the .apk (MIT, see its
 #                          LICENSE)
+#   src/third_party/stb    both programs: stb_image, to decode the PNG textures
+#                          (MIT or public domain, see its LICENSE)
 #   src/backend          both programs: common to every backend
 #   src/backend/BACKEND  the chosen backend
 #   src/platform           both programs: platform.h, what every platform must
@@ -34,7 +36,7 @@
 #   src/platform/PLATFORM  both programs: the chosen platform
 #   src/port             both programs: your code. It may stay empty.
 #   src/port/game          both programs: the game in plain C, with no ARM (only
-#                          services.h)
+#                          services.h, platform.h and backend.h)
 #   src/port/natives       both programs: natives that read the ARM registers
 #                          and call the game
 BACKEND ?= sdl
@@ -66,12 +68,12 @@ $(foreach b,$(sort $(BACKEND) $(ARM_BACKEND)),$(if $(wildcard src/backend/$(b)/*
 $(if $(filter 0 1,$(DEBUG_CONSOLE)),,$(error DEBUG_CONSOLE must be 0 or 1, not $(DEBUG_CONSOLE)))
 $(if $(filter 0 1,$(NATIVE)),,$(error NATIVE must be 0 or 1, not $(NATIVE)))
 $(if $(wildcard src/platform/$(PLATFORM)/*.c),,$(error no such platform: src/platform/$(PLATFORM). Available: $(patsubst src/platform/%/,%,$(wildcard src/platform/*/))))
-# src/port/game must stay plain C with no ARM: only services.h, platform.h and
-# its own headers.
+# src/port/game must stay plain C with no ARM: only services.h, platform.h,
+# backend.h and its own headers.
 GAME_FILES    := $(wildcard src/port/game/*.c src/port/game/*.cpp src/port/game/*.h)
 GAME_INCLUDES := $(if $(GAME_FILES),$(sort $(shell sed -n 's/^[ \t]*\#[ \t]*include[ \t]*"\([^"]*\)".*/\1/p' $(GAME_FILES))))
-GAME_BAD      := $(filter-out services.h platform.h $(notdir $(wildcard src/port/game/*.h)),$(GAME_INCLUDES))
-$(if $(GAME_BAD),$(error src/port/game may only include services.h, platform.h and its own headers, not: $(GAME_BAD)))
+GAME_BAD      := $(filter-out services.h platform.h backend.h $(notdir $(wildcard src/port/game/*.h)),$(GAME_INCLUDES))
+$(if $(GAME_BAD),$(error src/port/game may only include services.h, platform.h, backend.h and its own headers, not: $(GAME_BAD)))
 endif
 INSTALL   := sudo dnf install make gcc gcc-c++ clang lld qemu-user curl xz binutils tar SDL2-devel mesa-libGL-devel
 ifeq ($(BACKEND),sdl)
@@ -79,7 +81,7 @@ SDL_CFLAGS := $(shell sdl2-config --cflags 2>/dev/null)
 SDL_LIBS   := $(shell sdl2-config --libs 2>/dev/null) -lGL
 CHECK_SDL  := check-sdl
 endif
-INCLUDES  := $(addprefix -I,$(wildcard src/*/ src/port/*/)) -Isrc/third_party/miniz
+INCLUDES  := $(addprefix -I,$(wildcard src/*/ src/port/*/)) -Isrc/third_party/miniz -Isrc/third_party/stb
 # miniz only reads the .apk: no compression, no zip writing, no file times, no
 # zlib names.
 MINIZ     := -DMINIZ_NO_DEFLATE_APIS -DMINIZ_NO_TIME -DMINIZ_NO_ZLIB_COMPATIBLE_NAMES
@@ -94,7 +96,7 @@ endif
 BOTH    := $(filter-out $(if $(filter 0,$(DEBUG_CONSOLE)),src/debug/debug_server.c),$(wildcard src/shared/*.c src/debug/*.c src/third_party/*.c src/third_party/miniz/*.c src/backend/*.c src/platform/$(PLATFORM)/*.c src/port/*.c src/port/*.cpp src/port/*/*.c src/port/*/*.cpp))
 HOST    := $(BOTH) $(wildcard src/host/*.c src/backend/$(BACKEND)/*.c)
 ARM     := $(BOTH) $(wildcard src/arm/*.c src/arm/asm/*.s src/android_emu/*.c src/backend/$(ARM_BACKEND)/*.c)
-HEADERS := $(wildcard src/*/*.h src/backend/*/*.h src/platform/*/*.h src/port/*/*.h src/third_party/miniz/*.h)
+HEADERS := $(wildcard src/*/*.h src/backend/*/*.h src/platform/*/*.h src/port/*/*.h src/third_party/miniz/*.h src/third_party/stb/*.h)
 STAMP   := obj/backend-$(BACKEND)-$(PLATFORM)-console$(DEBUG_CONSOLE).stamp
 all: $(TARGETS)
 loader: $(HOST:src/%=obj/host/%.o) $(STAMP) ; $(CC) $(filter %.o,$^) -o $@ $(SDL_LIBS)

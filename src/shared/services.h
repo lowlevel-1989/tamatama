@@ -24,6 +24,9 @@ char *read_file(const char *path);  /* contenido terminado en 0, o NULL */
 int asset_path(char *out, size_t room, const char *name);
 /* assets/name para leer, o NULL */
 FILE *asset_open(const char *name);
+/* Un PNG en RGBA, 4 bytes por píxel, fila a fila, en memoria de malloc que se
+   libera con free. NULL si no es un PNG que se sepa leer (shared/png.c). */
+uint8_t *png_decode(const uint8_t *data, size_t size, int *width, int *height);
 
 #ifdef __cplusplus
 }

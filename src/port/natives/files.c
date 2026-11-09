@@ -36,6 +36,40 @@ void native_OnInputStreamRead(Regs *r) {
     r->r[0] = java_bytes;
 }
 
+/* Salta count bytes del id sin leerlos. Devuelve los saltados, o -1. */
+void native_OnInputStreamSkip(Regs *r) {
+    r->r[0] = (uint32_t)resource_skip((int)r->r[0], (int)r->r[1]);
+}
+
+/* Un fichero entero en un byte[], sin abrirlo con un id: nombre, offset y
+   tamaño. Tamaño 0 es hasta el final, como pide el juego con
+   OnReadFile("tc_logo_str.csv", 0, 0). Si el fichero no existe, devuelve null. */
+void native_OnReadFile(Regs *r) {
+    const JniObject *name = to_local(r->r[0]);
+    int offset = (int)r->r[1], size = (int)r->r[2];
+    int total = resource_file_size((const char *)name->data);
+    if (total < 0 || offset < 0 || offset > total) {
+        log_msg("[resource] read %s: not found\n", (const char *)name->data);
+        r->r[0] = 0;
+        return;
+    }
+    if (size <= 0 || size > total - offset) size = total - offset;
+    /* java_bytes es el byte[] tal como lo ve el juego; bytes, el mismo objeto
+       visto desde aquí, para rellenarlo. */
+    arm_ptr java_bytes = shared_alloc((uint32_t)(sizeof(JniObject) + size + 1));
+    JniObject *bytes = to_local(java_bytes);
+    int got = resource_read_file((const char *)name->data, offset, bytes->data, size);
+    bytes->len = got > 0 ? (uint32_t)got : 0;
+    bytes->dirty = 0;
+    bytes->data[bytes->len] = 0;
+    r->r[0] = java_bytes;
+}
+
+/* Cierra un fichero abierto para leer: una partida o un recurso. */
+void native_OnInputStreamClose(Regs *r) {
+    r->r[0] = (uint32_t)resource_close((int)r->r[0]);
+}
+
 void native_OnOutputStreamOpenLocalFile(Regs *r) {
     const JniObject *name = to_local(r->r[0]);
     r->r[0] = (uint32_t)resource_create_local((const char *)name->data);

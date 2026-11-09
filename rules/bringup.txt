@@ -21,7 +21,6 @@ symbol string_dispose         @0x7bdc1
 # exit   _CameraSetBaseScreen   @0x3edd1
 
 stub   ApplyCamera            @0x3ed41
-stub   MvFrameWorkInit        @0x52b3d
 
 watch m_rand            m_rand                      u32
 watch m_endDraw         m_endDraw                   u32

@@ -63,3 +63,15 @@ void native_glViewport(Regs *r) { glViewport(arg_word(r, 0), arg_word(r, 1), arg
 
 void native_glGenTextures(Regs *r) { glGenTextures(arg_word(r, 0), arg_ptr(r, 1)); }
 void native_glTexImage2D(Regs *r) { glTexImage2D(arg_word(r, 0), arg_word(r, 1), arg_word(r, 2), arg_word(r, 3), arg_word(r, 4), arg_word(r, 5), arg_word(r, 6), arg_word(r, 7), arg_ptr(r, 8)); }
+void native_glTexCoordPointer(Regs *r) { check_array_type(arg_word(r, 1)); glTexCoordPointer(arg_word(r, 0), arg_word(r, 1), arg_word(r, 2), arg_ptr(r, 3)); }
+void native_glDisable(Regs *r) { glDisable(arg_word(r, 0)); }
+void native_glDisableClientState(Regs *r) { glDisableClientState(arg_word(r, 0)); }
+void native_glTexParameterf(Regs *r) { glTexParameterf(arg_word(r, 0), arg_word(r, 1), arg_float(r, 2)); }
+void native_glBlendFunc(Regs *r) { glBlendFunc(arg_word(r, 0), arg_word(r, 1)); }
+void native_glBindTexture(Regs *r) { glBindTexture(arg_word(r, 0), arg_word(r, 1)); }
+
+void native_glScalef(Regs *r) { glScalef(arg_float(r, 0), arg_float(r, 1), arg_float(r, 2)); }
+void native_glRotatef(Regs *r) { glRotatef(arg_float(r, 0), arg_float(r, 1), arg_float(r, 2), arg_float(r, 3)); }
+void native_glColor4f(Regs *r) { glColor4f(arg_float(r, 0), arg_float(r, 1), arg_float(r, 2), arg_float(r, 3)); }
+void native_glPushMatrix(Regs *r) { (void)r; glPushMatrix(); }
+void native_glPopMatrix(Regs *r) { (void)r; glPopMatrix(); }
