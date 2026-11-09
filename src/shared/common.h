@@ -129,6 +129,8 @@ typedef struct Rule {
 } Rule;
 /* lee el fichero de reglas */
 void rules_load(const char *path);
+/* una línea trap de las reglas: arm/trap.c */
+void trap_add(const char *name, const char *spec);
 const Rule *rule_find(const char *name); /* la regla de este nombre, o NULL */
 const char *symbol_place(const char *name); /* el lugar de un nombre de symbol,
                                                o NULL */

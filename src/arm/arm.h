@@ -94,6 +94,8 @@ void *resolve_import(const char *name);
 void run_native(int index, uint32_t *r, uint32_t sp);
 /* imprime el resumen final */
 void hooks_report(void);
+/* trap.c: en cada safe point, quién escribió en las variables con trap */
+void trap_check(void);
 /* jvm.c: los métodos de Java sin native que ha llamado el juego */
 void java_report(void);
 /* 1: las funciones nativas están en otro proceso */

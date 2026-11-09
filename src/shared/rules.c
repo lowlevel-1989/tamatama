@@ -10,6 +10,9 @@
      exit NOMBRE [@0xDIR]          termina el programa en cuanto la llaman, con
                                    el informe final
      watch NOMBRE LUGAR [TIPO]     sigue una variable: lo explica debug/watch.c
+     trap NOMBRE LUGAR [TIPO] [VALOR]
+                                   quién escribe en una variable: lo explica
+                                   arm/trap.c
      symbol NOMBRE LUGAR           un nombre para un lugar que el .so no exporta
    @0xDIR es la posición dentro del .so, para funciones sin símbolo. */
 
@@ -69,6 +72,12 @@ const char *symbol_place(const char *name) {
         if (!strcmp(symbols[i].name, name)) return symbols[i].place;
     return 0;
 }
+/* En loader (x86_64) trap no hace nada: el código del .so corre en
+   loader-arm, que tiene la de verdad en arm/trap.c. */
+__attribute__((weak)) void trap_add(const char *name, const char *spec) {
+    (void)name;
+    (void)spec;
+}
 /* Lee el fichero línea a línea. Los nombres apuntan dentro del buffer, que
    nunca se libera. */
 void rules_load(const char *path) {
@@ -82,6 +91,7 @@ void rules_load(const char *path) {
             char *option = next_word(name);
             if (!strcmp(line, "trace")) trace_on = !strcmp(name, "on");
             else if (!strcmp(line, "watch")) watch_add(name, option);
+            else if (!strcmp(line, "trap")) trap_add(name, option);
             else if (!strcmp(line, "symbol")) symbol_add(name, option);
             else if (!strcmp(line, "pause")) debug_pause_at(name);
             else if (count == MAX_RULES) die("too many rules");

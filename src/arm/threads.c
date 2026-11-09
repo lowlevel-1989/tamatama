@@ -119,6 +119,7 @@ int thread_create(uint32_t function, uint32_t argument) {
           -> TO_ARM_NATIVE_DONE -> sigue el scheduler
      Pi:  todo en este proceso -> debug_after_call directamente */
 static void safe_point(void) {
+    trap_check();
     if (!has_host) {
         debug_after_call("thread");
         return;
@@ -161,7 +162,10 @@ void thread_call_begin(void) {
     if (!current) main_calls++;
 }
 void thread_call_end(void) {
-    if (!current && --main_calls == 0) thread_round();
+    if (!current && --main_calls == 0) {
+        trap_check(); /* el final de una llamada de app_main: otro safe point */
+        thread_round();
+    }
 }
 
 /* El usleep que recibe el juego. */
