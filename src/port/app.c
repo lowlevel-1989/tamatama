@@ -2,6 +2,7 @@
 #include "backend.h"
 #include "methods.h"
 #include "touch.h"
+#include "texture.h"
 
 // La pantalla del juego es de 320x480, pero la ventana se abre a SCALE veces
 // ese tamaño. init recibe el tamaño real, como en Android, y el .so escala
@@ -16,8 +17,16 @@ int app_main(void) {
     arm_ptr env = arm_jni_env();
     backend_init(WIDTH * SCALE, HEIGHT * SCALE);
 
-    // deberia actualizar cada que cambia el tamaño de la pantalla. Va antes de
-    // init: backend_init ya ha creado la ventana, así que init ve 1.
+    // Las bandas que sobran si la ventana no tiene la proporción del juego:
+    // uno de sus fondos, repetido. La imagen está a la escala alta del juego
+    // (640x960), así que cada repetición mide la mitad en coordenadas del
+    // juego.
+    int bands_w, bands_h, bands = texture_upload("ima_bg_00001.png", &bands_w, &bands_h);
+    if (bands > 0) backend_set_bands(bands, bands_w / 2, bands_h / 2);
+
+    // Cuenta los cambios de tamaño de la pantalla, como onSurfaceChanged en
+    // Android. Va antes de init: backend_init ya ha creado la ventana, así que
+    // init ve 1. En el loop, cada cambio de tamaño suma uno.
     reload_counter = 1;
 
     uint32_t init_args[4] = {env, FAKE_JCLASS, WIDTH * SCALE, HEIGHT * SCALE};
@@ -43,16 +52,16 @@ int app_main(void) {
 
     while (!backend_should_close()) {
         backend_process_events();
+        if (backend_resized()) reload_counter++;
         touch_update(env); /* el ratón como un dedo */
         backend_begin_frame();
         call_method(METHOD("step"), no_args, 2);
         backend_swap_buffers();
     }
 
-    /*
     call_method(METHOD("GameTerm"), no_args, 2);
     call_method(METHOD("stop"), no_args, 2);
-    */
+
     backend_cleanup();
     return 0;
 }

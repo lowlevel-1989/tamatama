@@ -32,14 +32,7 @@ static uint8_t *read_asset(const char *name, size_t *size) {
     return data;
 }
 
-int texture_load(const char *name) {
-    /* el primer hueco libre: uno que se quitó, o uno sin estrenar */
-    int slot = 0;
-    while (slot < texture_count && textures[slot].used) slot++;
-    if (slot == MAX_TEXTURES) {
-        log_msg("[texture] %s: too many textures, the limit is %d\n", name, MAX_TEXTURES);
-        return -1;
-    }
+int texture_upload(const char *name, int *width_out, int *height_out) {
     size_t size = 0;
     uint8_t *data = read_asset(name, &size);
     if (!data) {
@@ -57,14 +50,29 @@ int texture_load(const char *name) {
        color ya multiplicado por el alfa. */
     for (size_t i = 0, n = (size_t)width * height * 4; i < n; i += 4)
         for (int k = 0; k < 3; k++) rgba[i + k] = (uint8_t)(rgba[i + k] * rgba[i + 3] / 255);
+    int gl_name = backend_texture_create(rgba, width, height);
+    free(rgba);
+    *width_out = width;
+    *height_out = height;
+    return gl_name;
+}
+
+int texture_load(const char *name) {
+    /* el primer hueco libre: uno que se quitó, o uno sin estrenar */
+    int slot = 0;
+    while (slot < texture_count && textures[slot].used) slot++;
+    if (slot == MAX_TEXTURES) {
+        log_msg("[texture] %s: too many textures, the limit is %d\n", name, MAX_TEXTURES);
+        return -1;
+    }
+    int width, height, gl_name = texture_upload(name, &width, &height);
+    if (gl_name < 0) return -1;
     if (slot == texture_count) texture_count++;
     textures[slot].used = 1;
-    textures[slot].gl_name = backend_texture_create(rgba, width, height);
+    textures[slot].gl_name = gl_name;
     textures[slot].width = width;
     textures[slot].height = height;
-    free(rgba);
-    log_msg("[texture] %s: id %d, %dx%d, gl %d\n", name, slot + 1, width, height,
-            textures[slot].gl_name);
+    log_msg("[texture] %s: id %d, %dx%d, gl %d\n", name, slot + 1, width, height, gl_name);
     return slot + 1; /* el .so cuenta desde 1 */
 }
 

@@ -18,10 +18,8 @@ symbol string_assign          @0x7cfc5
 symbol string_clone           @0x7c8e5
 symbol string_dispose         @0x7bdc1
 
-# exit   _CameraSetBaseScreen   @0x3edd1
-
-watch m_rand            m_rand                      u32
-watch m_endDraw         m_endDraw                   u32
+# watch m_rand            m_rand                      u32
+# watch m_endDraw         m_endDraw                   u32
 watch var_bgm_volume    g_bgm_volume                f32
 watch var_se_volume     g_se_volume                 f32
 watch gm_bgm_volume     gm_smartpSystemStatus+0x83   u8

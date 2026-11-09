@@ -21,7 +21,11 @@ void backend_process_events(void);
 void backend_swap_buffers(void);
 /* 1 cuando el programa debe terminar. */
 int backend_should_close(void);
-/* Escribe la posición del pointer y devuelve 1 si está pulsado. */
+/* 1 una sola vez después de cada cambio de tamaño de la ventana. */
+int backend_resized(void);
+/* Escribe la posición del pointer y devuelve 1 si está pulsado. La posición va
+   en píxeles del tamaño con que se abrió la ventana, aunque luego cambie: es
+   el que conoce el juego. */
 int backend_pointer(int *x, int *y);
 /* Cierra la ventana. */
 void backend_cleanup(void);
@@ -31,6 +35,11 @@ void backend_cleanup(void);
 int backend_texture_create(const unsigned char *rgba, int width, int height);
 /* Borra la textura de GL con ese nombre. */
 void backend_texture_delete(int gl_name);
+/* La textura que se repite en las bandas que sobran alrededor del juego
+   cuando la ventana no tiene su proporción. width y height: lo que mide cada
+   repetición, en coordenadas del juego (320x480). Sin llamarla, las bandas son
+   blancas. */
+void backend_set_bands(int gl_name, int width, int height);
 
 /* El sonido. Cargar el fichero es cosa del juego (src/port/game/sound.c): el
    backend solo lo decodifica y lo hace sonar. music = 1 para la música, que

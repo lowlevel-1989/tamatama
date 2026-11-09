@@ -10,3 +10,6 @@ int texture_width(int id);   /* en píxeles */
 int texture_height(int id);
 /* borra la textura y deja libre su id; 0 si el id no es válido */
 int texture_remove(int id);
+/* Sube una imagen a GL sin darle id: para lo que dibuja el port, no el .so.
+   Devuelve su nombre en GL y su tamaño en píxeles, o -1. */
+int texture_upload(const char *name, int *width, int *height);

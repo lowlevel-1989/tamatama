@@ -18,6 +18,7 @@ void backend_begin_frame(void) {}
 void backend_process_events(void) {}
 void backend_swap_buffers(void) { frames++; }
 int backend_should_close(void) { return frames >= max_frames; }
+int backend_resized(void) { return 0; }
 int backend_pointer(int *x, int *y) {
     *x = *y = 0;
     return 0;
@@ -33,6 +34,12 @@ int backend_texture_create(const unsigned char *rgba, int width, int height) {
 }
 /* Sin GL no hay nada que borrar. */
 void backend_texture_delete(int gl_name) { (void)gl_name; }
+/* Sin ventana no hay bandas. */
+void backend_set_bands(int gl_name, int width, int height) {
+    (void)gl_name;
+    (void)width;
+    (void)height;
+}
 /* Sin audio: los sonidos no se cargan y nunca están sonando. */
 int backend_sound_load(const void *data, size_t size, int music) {
     (void)data;
