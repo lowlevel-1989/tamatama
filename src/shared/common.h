@@ -50,7 +50,7 @@ extern const NativeEntry native_table[];
 #endif
 
 /* La versión de tamatama: la primera línea del log. */
-#define TAMATAMA_VERSION "0.6.0"
+#define TAMATAMA_VERSION "0.6.1"
 
 /* La arena: una sola región de memoria con la imagen del juego, su head y su
    stack.

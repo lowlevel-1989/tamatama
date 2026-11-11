@@ -117,6 +117,26 @@ $(eval $(call PM_PROGRAM,armhf,$(PM_ARMFLAGS),-no-pie))
 pm-loader-arm:
 	$(MAKE) PLATFORM=linux loader-arm
 
+# The notice that goes with the qemu-arm we ship: into the file $(1), with
+# the name it has in the package, $(2).
+define QEMU_NOTICE
+	printf '%s\n' \
+	  "$(2) is qemu-arm (QEMU user mode emulation), unmodified, from" \
+	  "the Debian package qemu-user $(PM_QEMU_VERSION)." \
+	  "" \
+	  "QEMU is free software: it is distributed under the GNU General Public" \
+	  "License, version 2 (GPL-2.0.txt), and parts of it under compatible" \
+	  "licenses. Its complete source code is in the same Debian pool:" \
+	  "" \
+	  "  $(PM_QEMU_POOL)" \
+	  "  qemu_$(firstword $(subst -, ,$(PM_QEMU_VERSION))).orig.tar.xz" \
+	  "  qemu_$(PM_QEMU_VERSION).debian.tar.xz" \
+	  "  qemu_$(PM_QEMU_VERSION).dsc" \
+	  "" \
+	  "and at https://www.qemu.org. The same source is also available from the" \
+	  "author of Tamatama on request." > $(1)
+endef
+
 # 5. The .zip.
 PM_STAGE := $(PM)/zip
 $(PM_ZIP): $(PM)/tamatama.aarch64 $(PM)/tamatama.armhf pm-loader-arm $(PM_DEPS)/qemu-arm.aarch64 \
@@ -133,27 +153,87 @@ $(PM_ZIP): $(PM)/tamatama.aarch64 $(PM)/tamatama.armhf pm-loader-arm $(PM_DEPS)/
 	cp src/third_party/miniz/LICENSE $(PM_STAGE)/tamatama/licenses/miniz.txt
 	cp src/third_party/minimp4/LICENSE $(PM_STAGE)/tamatama/licenses/minimp4.txt
 	cp src/third_party/stb/LICENSE $(PM_STAGE)/tamatama/licenses/stb.txt
-	printf '%s\n' \
-	  "qemu-arm.aarch64 is qemu-arm (QEMU user mode emulation), unmodified, from" \
-	  "the Debian package qemu-user $(PM_QEMU_VERSION)." \
-	  "" \
-	  "QEMU is free software: it is distributed under the GNU General Public" \
-	  "License, version 2 (GPL-2.0.txt), and parts of it under compatible" \
-	  "licenses. Its complete source code is in the same Debian pool:" \
-	  "" \
-	  "  $(PM_QEMU_POOL)" \
-	  "  qemu_$(firstword $(subst -, ,$(PM_QEMU_VERSION))).orig.tar.xz" \
-	  "  qemu_$(PM_QEMU_VERSION).debian.tar.xz" \
-	  "  qemu_$(PM_QEMU_VERSION).dsc" \
-	  "" \
-	  "and at https://www.qemu.org. The same source is also available from the" \
-	  "author of Tamatama on request." > $(PM_STAGE)/tamatama/licenses/QEMU.txt
+	$(call QEMU_NOTICE,$(PM_STAGE)/tamatama/licenses/QEMU.txt,qemu-arm.aarch64)
 	chmod +x $(PM_STAGE)/Tamatama.sh $(PM_STAGE)/tamatama/tamatama.* $(PM_STAGE)/tamatama/loader-arm \
 	  $(PM_STAGE)/tamatama/qemu-arm.aarch64
 	rm -f $@ && cd $(PM_STAGE) && zip -q -r -9 $(CURDIR)/$@ Tamatama.sh tamatama
 	@echo "Built $@ (version $(PM_VERSION)): unzip it into the ports folder of the device"
 
+# Raspberry Pi: make PLATFORM=portmaster rpi. The same programs, with
+# desktop OpenGL (libGL, as make on the Pi itself) instead of GLES, in two
+# packages to unpack and run:
+#   tamatama-VERSION-linux-aarch64.tar.gz  loader, loader-arm and qemu-arm
+#                                          (for the Pis that no longer run
+#                                          32-bit code): 64-bit Raspberry
+#                                          Pi OS
+#   tamatama-VERSION-linux-armv7.tar.gz    loader-arm with the screen:
+#                                          32-bit Raspberry Pi OS
+# The OpenGL headers and library are added to the same sysroots.
+RPI_PACKAGES := libgl1 libglx0 libglvnd0 mesa-common-dev
+RPI_TAR = tamatama-$(PM_VERSION)-linux-$(1).tar.gz
+
+$(PM_DEPS)/sysroot-%/.gl: $(PM_DEPS)/sysroot-%/.ready
+	rm -rf $(@D)/gl.tmp && mkdir -p $(@D)/gl.tmp
+	curl -fsSL $(PM_ARCHIVE)/dists/$(PM_SUITE)/main/binary-$*/Packages.xz | xz -d > $(@D)/gl.tmp/Packages
+	set -e; for p in $(RPI_PACKAGES); do \
+	  f=$$(awk -v p=$$p '$$1=="Package:"{ok=$$2==p} ok&&$$1=="Filename:"{print $$2;exit}' $(@D)/gl.tmp/Packages); \
+	  test -n "$$f" || { echo "no package $$p for $*"; exit 1; }; \
+	  curl -fsSL $(PM_ARCHIVE)/$$f -o $(@D)/gl.tmp/package.deb; \
+	  (cd $(@D)/gl.tmp && ar x package.deb && tar -xf data.tar.* -C .. && rm -f package.deb data.tar.* control.tar.* debian-binary); \
+	done
+	cd $(@D) && find . -type l | while read link; do \
+	  target=$$(readlink "$$link"); case "$$target" in /*) \
+	    ln -sfn "$$(realpath -m --relative-to="$$(dirname "$$link")" ".$$target")" "$$link";; esac; done
+	rm -rf $(@D)/gl.tmp && touch $@
+
+RPI_LIBS = $(subst -l:libGLESv1_CM.so.1,-l:libGL.so.1,$(call PM_LIBS,$(1)))
+define RPI_PROGRAM
+$(PM)/rpi-$(1)/obj/%.c.o: src/%.c $(PM_HEADERS) $(PM)/$(1)/libfdk-aac.a $(PM_DEPS)/sysroot-$(DEB_$(1))/.gl
+	@mkdir -p $$(@D) && $(call PM_CC,$(1)) $(filter-out -DARENA_GLES,$(call PM_CFLAGS,$(1))) $(2) -c $$< -o $$@
+$(PM)/rpi-$(1)/obj/%.cpp.o: src/%.cpp $(PM_HEADERS) $(PM)/$(1)/libfdk-aac.a $(PM_DEPS)/sysroot-$(DEB_$(1))/.gl
+	@mkdir -p $$(@D) && $(call PM_CC,$(1)) -x c++ $(filter-out -DARENA_GLES,$(call PM_CFLAGS,$(1))) $(PM_CXXFLAGS) $(2) -c $$< -o $$@
+$(PM)/rpi-$(1)/obj/%.s.o: src/%.s $(PM)/$(1)/libfdk-aac.a
+	@mkdir -p $$(@D) && $(call PM_CC,$(1)) -c $$< -o $$@
+$(PM)/rpi-$(1)/program: $(SRC_$(1):src/%=$(PM)/rpi-$(1)/obj/%.o)
+	$(call PM_CC,$(1)) -fuse-ld=lld $(3) $$^ -o $$@ $(call RPI_LIBS,$(1)) -Wl,-Bstatic -lstdc++ -Wl,-Bdynamic
+endef
+$(eval $(call RPI_PROGRAM,aarch64,,))
+$(eval $(call RPI_PROGRAM,armhf,$(PM_ARMFLAGS),-no-pie))
+
+# Each package: the tamatama/ folder with the programs, an empty apk/, the
+# READMEs, the license and those of what it carries.
+RPI_STAGE := $(PM)/rpi-stage
+define RPI_PACKAGE
+	rm -rf $(RPI_STAGE) && mkdir -p $(RPI_STAGE)/tamatama/apk $(RPI_STAGE)/tamatama/licenses
+	cp README.md README.es.md LICENSE $(RPI_STAGE)/tamatama/
+	cp LICENSE $(RPI_STAGE)/tamatama/licenses/tamatama.txt
+	cp $(PM_DEPS)/src/fdk-aac/NOTICE $(RPI_STAGE)/tamatama/licenses/fdk-aac.txt
+	cp src/third_party/miniz/LICENSE $(RPI_STAGE)/tamatama/licenses/miniz.txt
+	cp src/third_party/minimp4/LICENSE $(RPI_STAGE)/tamatama/licenses/minimp4.txt
+	cp src/third_party/stb/LICENSE $(RPI_STAGE)/tamatama/licenses/stb.txt
+endef
+
+rpi: $(call RPI_TAR,aarch64) $(call RPI_TAR,armv7)
+
+$(call RPI_TAR,aarch64): $(PM)/rpi-aarch64/program pm-loader-arm $(PM_DEPS)/qemu-arm.aarch64
+	$(RPI_PACKAGE)
+	cp $(PM)/rpi-aarch64/program $(RPI_STAGE)/tamatama/loader
+	cp loader-arm $(RPI_STAGE)/tamatama/loader-arm
+	cp $(PM_DEPS)/qemu-arm.aarch64 $(RPI_STAGE)/tamatama/qemu-arm
+	cp android/licenses/GPL-2.0.txt $(RPI_STAGE)/tamatama/licenses/GPL-2.0.txt
+	$(call QEMU_NOTICE,$(RPI_STAGE)/tamatama/licenses/QEMU.txt,qemu-arm)
+	chmod +x $(RPI_STAGE)/tamatama/loader $(RPI_STAGE)/tamatama/loader-arm $(RPI_STAGE)/tamatama/qemu-arm
+	tar -C $(RPI_STAGE) -czf $@ tamatama
+	@echo "Built $@: for 64-bit Raspberry Pi OS, run ./loader --menu"
+
+$(call RPI_TAR,armv7): $(PM)/rpi-armhf/program
+	$(RPI_PACKAGE)
+	cp $(PM)/rpi-armhf/program $(RPI_STAGE)/tamatama/loader-arm
+	chmod +x $(RPI_STAGE)/tamatama/loader-arm
+	tar -C $(RPI_STAGE) -czf $@ tamatama
+	@echo "Built $@: for 32-bit Raspberry Pi OS, run ./loader-arm --menu"
+
 clean: ; rm -rf $(PM) $(PM_ZIP)
 distclean: clean ; rm -rf $(PM_DEPS)
 
-.PHONY: all pm-loader-arm clean distclean
+.PHONY: all rpi pm-loader-arm clean distclean

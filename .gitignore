@@ -11,6 +11,7 @@
 /tamatama.apk.idsig
 /portmaster/deps/
 /tamatama.zip
+/tamatama-*.tar.gz
 # Los paquetes de cada versión, para subirlos a las releases de GitHub
 /release/
 

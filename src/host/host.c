@@ -72,6 +72,18 @@ static const char *loader_arm_path(void) {
     return path;
 }
 
+/* qemu-arm: el de QEMU_ARM; si no, el que vaya junto al programa (los
+   paquetes de la Raspberry Pi lo traen), y si no, el del PATH. */
+static const char *qemu_arm_path(void) {
+    static char path[PATH_MAX];
+    const char *forced = getenv("QEMU_ARM");
+    if (forced && *forced) return forced;
+    if (!path[0] && snprintf(path, sizeof path, "%s/qemu-arm", base_dir()) < (int)sizeof path &&
+        access(path, X_OK))
+        snprintf(path, sizeof path, "qemu-arm");
+    return path;
+}
+
 /* El hijo de --probe. */
 static void run_probe(void *unused) {
     (void)unused;
@@ -379,8 +391,7 @@ static void run_loader_arm(void *context) {
     for (int fd = 6; fd < 64; fd++) close(fd);
 
 
-    const char *qemu = getenv("QEMU_ARM");
-    if (!qemu) qemu = "qemu-arm";
+    const char *qemu = qemu_arm_path();
 
    /* Modo --serve
     *

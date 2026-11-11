@@ -106,7 +106,7 @@ The first time, it downloads an ARM libc from Debian into `sysroot/`. Options:
 | Option | Values | What for |
 |---|---|---|
 | `BACKEND` | `sdl` (default), `dummy` | window, input and GL |
-| `PLATFORM` | `linux` (default), `portmaster`, `android` | `portmaster`: `tamatama.zip`, the PortMaster port; `android`: `tamatama.apk` |
+| `PLATFORM` | `linux` (default), `portmaster`, `android` | `portmaster`: `tamatama.zip`, the PortMaster port (and `make PLATFORM=portmaster rpi`, the Raspberry Pi packages); `android`: `tamatama.apk` |
 | `DEBUG_CONSOLE` | `1` (default), `0` | the debug console (`--debug`) |
 | `NATIVE` | `0` (default), `1` | `1`: no `.so` and no QEMU, everything native |
 | `GLES` | `0` (default), `1` | `1`: OpenGL ES 1.1 instead of OpenGL 2.1 (Android and PortMaster use it) |
