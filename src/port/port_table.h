@@ -1,6 +1,13 @@
-#define JAVA(method) "com/namcobandaigames/tamagotchisp/SampleGameNatives." method
+/* SampleGameNatives, sin paquete: jvm.c (jni_FindClass) se lo quita, porque
+   cambia en cada versión. */
+#define JAVA(method) "SampleGameNatives." method
 
 NATIVE(JAVA("OnGetReloadCounter()I"), native_OnGetReloadCounter)
+NATIVE(JAVA("OnStartCapture(I)V"), native_OnStartCapture)
+NATIVE(JAVA("OnSelectSNS()Z"), native_OnSelectSNS)
+NATIVE(JAVA("OnSetVibrator(I)V"), native_OnSetVibrator)
+NATIVE(JAVA("OnSetWebView(Ljava/lang/String;FFFF)I"), native_OnSetWebView)
+NATIVE(JAVA("OnClearWebView()V"), native_OnClearWebView)
 NATIVE(JAVA("OnInputStreamOpenLocalFile(Ljava/lang/String;)I"), native_OnInputStreamOpenLocalFile)
 NATIVE(JAVA("OnInputStreamOpenResourceFile(Ljava/lang/String;)I"), native_OnInputStreamOpenResourceFile)
 NATIVE(JAVA("OnInputStreamRead(II)[B"), native_OnInputStreamRead)
@@ -21,4 +28,6 @@ NATIVE(JAVA("OnSetSeVolume(F)V"), native_OnSetSeVolume)
 NATIVE(JAVA("OnOutputStreamOpenLocalFile(Ljava/lang/String;)I"), native_OnOutputStreamOpenLocalFile)
 NATIVE(JAVA("OnOutputStreamClose(I)I"), native_OnOutputStreamClose)
 NATIVE(JAVA("OnOutputStreamWrite(I[B)I"), native_OnOutputStreamWrite)
+NATIVE(JAVA("OnReadGameData(Ljava/lang/String;I)[B"), native_OnReadGameData)
+NATIVE(JAVA("OnWriteGameData(Ljava/lang/String;[B)Z"), native_OnWriteGameData)
 NATIVE("Device_PrintMessage", native_Device_PrintMessage)

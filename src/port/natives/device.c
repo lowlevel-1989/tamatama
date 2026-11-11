@@ -1,8 +1,12 @@
-/* port/natives/device.c: Device_PrintMessage es un printf del juego, así que
+/* port/natives/device.c: lo del aparato: los mensajes del juego y la
+   vibración.
+
+   Device_PrintMessage es un printf del juego, así que
    cada argumento se lee según lo que pida el formato. Un printf normal no
    serviría: los argumentos están en los registers y el stack de ARM, no en los
    de este programa. */
 #include "common.h"
+#include "backend.h"
 
 /* La palabra número i de los argumentos: r0-r3 y después el stack. */
 static uint32_t arg_word(const Regs *r, int i) { return i < 4 ? r->r[i] : stack_arg(r, i - 4); }
@@ -93,4 +97,12 @@ void native_Device_PrintMessage(Regs *r) {
     out[used] = 0;
     log_msg("[game] %s\n", out);
     r->r[0] = 0;
+}
+
+/* La vibración: el juego pide vibrar ms milisegundos (se ha visto 500).
+   En Android vibra el teléfono; aquí, el mando. */
+void native_OnSetVibrator(Regs *r) {
+    int ms = (int)r->r[0];
+    log_msg("[device] vibrate %d ms\n", ms);
+    backend_vibrate(ms);
 }

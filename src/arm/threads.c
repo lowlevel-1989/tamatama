@@ -155,11 +155,17 @@ static uint64_t thread_round(void) {
     return next;
 }
 
+/* El nombre corto de la llamada de app_main en curso, como lo muestra watch:
+   de Java_..._step queda step. */
+static char main_call[64];
+
 /* Alrededor de cada llamada al código ARM. Al terminar una llamada de app_main,
    el principal da una ronda. Las anidadas y las que hace un thread no
-   cuentan. */
-void thread_call_begin(void) {
-    if (!current) main_calls++;
+   cuentan. name es el método, o NULL si se llama por dirección. */
+void thread_call_begin(const char *name) {
+    if (current || main_calls++) return;
+    const char *tail = name ? strrchr(name, '_') : NULL;
+    snprintf(main_call, sizeof main_call, "%s", !name ? "a call by address" : tail && tail[1] ? tail + 1 : name);
 }
 void thread_call_end(void) {
     if (!current && --main_calls == 0) {
@@ -167,6 +173,12 @@ void thread_call_end(void) {
         thread_round();
     }
 }
+
+/* Quién está corriendo: el número del thread, el mismo de "[thread] N:", o -1
+   si es el principal, dentro de una llamada de app_main. */
+int thread_current(void) { return current ? (int)(current - threads) : -1; }
+/* La llamada de app_main que está corriendo el principal: init, step... */
+const char *thread_main_call(void) { return main_call; }
 
 /* El usleep que recibe el juego. */
 int thread_usleep(uint32_t microseconds) {

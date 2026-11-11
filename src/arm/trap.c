@@ -23,7 +23,9 @@
        convierte en SIGTRAP
        -> la escritura se repite y se hace
        -> la instrucción siguiente es el udf -> SIGILL -> on_step:
-          ¿cambió la variable? -> apunta el pc y el lr de la escritura
+          ¿cambió la variable? -> apunta el pc de la escritura y quién
+          corría: la llamada de app_main (init, step...) o el thread N (el
+          de "[thread] N:")
           quita el udf y vuelve a cerrar la página
      siguiente safe point -> ¿tomó el valor buscado? -> muestra quién lo puso
 
@@ -57,8 +59,11 @@ typedef struct {
     arm_ptr address;      /* 0 hasta que el .so está cargado */
     char last[MAX_TEXT];  /* el valor en el safe point anterior */
     uint8_t before[8];    /* los bytes antes de la escritura en curso */
-    volatile uint32_t pc; /* la última escritura que la cambió; 0 si no hubo */
-    volatile uint32_t lr; /* quién llamó a la función que escribió */
+    volatile uint32_t pc;     /* la última escritura que la cambió; 0 si no
+                                 hubo */
+    volatile uint32_t lr;     /* su lr: en una función hoja, quién la llamó */
+    volatile int thread;      /* el thread que la hizo, o -1: el principal */
+    char call[64];            /* con el principal: la llamada de app_main */
 } Trap;
 
 static Trap traps[MAX_TRAPS];
@@ -67,7 +72,10 @@ static int trap_count;
 /* La escritura en curso: entre on_write y on_step. */
 static struct {
     uint32_t page;       /* la página abierta; 0 si no hay ninguna */
-    uint32_t pc, lr;     /* la instrucción que escribe */
+    uint32_t pc;         /* la instrucción que escribe */
+    uint32_t lr;         /* y su lr */
+    int thread;          /* quién la ejecuta */
+    const char *call;    /* con el principal: la llamada de app_main */
     uint32_t step;       /* dónde está el udf */
     uint16_t saved[2];   /* lo que había donde está el udf */
     int thumb;
@@ -108,6 +116,8 @@ static void on_write(int signal_number, siginfo_t *info, void *context) {
     pending.page = page;
     pending.pc = mc->arm_pc;
     pending.lr = mc->arm_lr;
+    pending.thread = thread_current();
+    pending.call = thread_main_call();
     pending.thumb = (mc->arm_cpsr & THUMB_BIT) != 0;
     /* La instrucción siguiente: en Thumb ocupa 4 bytes si los 5 bits altos de
        su primera mitad son 11101, 11110 o 11111, y si no 2; en ARM, 4. */
@@ -141,6 +151,8 @@ static void on_step(int signal_number, siginfo_t *info, void *context) {
             memcmp(t->before, (void *)t->address, (size_t)value_size(t))) {
             t->pc = pending.pc;
             t->lr = pending.lr;
+            t->thread = pending.thread;
+            memcpy(t->call, pending.call, sizeof t->call);
         }
     }
     /* Al volver se ejecuta la instrucción de verdad. */
@@ -203,17 +215,19 @@ void trap_check(void) {
         value_format(t->type, t->address, now, MAX_TEXT);
         if (strcmp(now, t->last) && (!t->wanted || !strcmp(now, t->wanted))) {
             if (t->pc) {
-                char written[160], caller[160];
+                char written[160], from[160], who[80];
                 elf_format_address(t->pc, written, sizeof written);
-                elf_format_address(t->lr, caller, sizeof caller);
-                log_msg("[trap] %s %s -> %s, written at %s, lr %s\n", t->name, t->last, now, written,
-                        caller);
+                elf_format_address(t->lr & ~1u, from, sizeof from);
+                if (t->thread < 0) snprintf(who, sizeof who, "%s", t->call);
+                else snprintf(who, sizeof who, "thread %d", t->thread);
+                log_msg("[trap] %s %s -> %s, written at %s (lr %s) by %s\n", t->name, t->last, now,
+                        written, from, who);
             } else
                 log_msg("[trap] %s %s -> %s, not caught: its page was open\n", t->name, t->last,
                         now);
         }
         memcpy(t->last, now, MAX_TEXT);
-        t->pc = t->lr = 0;
+        t->pc = 0;
     }
     /* Si un udf no llegó a ejecutarse, se quita aquí. */
     if (pending.page) {

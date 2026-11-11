@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- el rosa del logo (src/shared/colors.h) -->
+    <color name="icon_background">#FFEB008B</color>
+</resources>

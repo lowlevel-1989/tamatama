@@ -29,6 +29,22 @@
 #include <wchar.h>
 #include <wctype.h>
 
+/* Compilado para Android, la libc de este sistema ya es bionic, que no
+   tiene las funciones BSD viejas ni __errno_location: estas las sustituyen. */
+#ifdef __ANDROID__
+#define __errno_location __errno
+#undef bzero
+#undef bcopy
+static void bzero(void *p, size_t n) { memset(p, 0, n); }
+static void bcopy(const void *from, void *to, size_t n) { memmove(to, from, n); }
+static int bcmp(const void *p, const void *q, size_t n) { return memcmp(p, q, n); }
+static char *index(const char *s, int c) { return strchr(s, c); }
+static char *rindex(const char *s, int c) { return strrchr(s, c); }
+#endif
+/* ioctl tiene varias firmas en algunas libc (bionic la declara
+   "overloadable"): no se puede tomar su dirección directamente. */
+static int arena_ioctl(int fd, unsigned long request, void *arg) { return ioctl(fd, request, arg); }
+
 /* El .so pasa los float en registers enteros. Si este sistema es hard-float,
    una función que recibe o devuelve un float debe indicarlo, o buscaría sus
    argumentos en s0, d0... */
@@ -216,6 +232,24 @@ static char *bionic_fgets_chk(char *s, int n, FILE *f, size_t sl) { (void)sl; re
 static int bionic_fputs(const char *s, FILE *f) { return fputs(s, real_stream(f)); }
 static void bionic_setbuf(FILE *f, char *b) { setbuf(real_stream(f), b); }
 static int bionic_setvbuf(FILE *f, char *b, int m, size_t n) { return setvbuf(real_stream(f), b, m, n); }
+/* printf del juego. En Android no se ve: lo que muestra una app es su log, y
+   ahí cada llamada es una línea. Aquí va al log igual, con un salto de línea
+   al final, aunque el texto no lo traiga. */
+static int bionic_vprintf(const char *fmt, va_list a) {
+    char b[1024];
+    int n = vsnprintf(b, sizeof b, fmt, a);
+    size_t length = strlen(b);
+    if (length && b[length - 1] == '\n') b[length - 1] = 0;
+    log_msg("[printf] %s\n", b);
+    return n;
+}
+static int bionic_printf(const char *fmt, ...) {
+    va_list a;
+    va_start(a, fmt);
+    int r = bionic_vprintf(fmt, a);
+    va_end(a);
+    return r;
+}
 /* Las variantes con formato también traducen el flujo. */
 static int bionic_vfprintf(FILE *f, const char *fmt, va_list a) { return vfprintf(real_stream(f), fmt, a); }
 static int bionic_vfscanf(FILE *f, const char *fmt, va_list a) { return vfscanf(real_stream(f), fmt, a); }
@@ -602,7 +636,7 @@ static const BionicEntry bionic_table[] = {
     WRAP(strtod), WRAP(strtof), WRAP(atof), WRAP(drand48), WRAP(difftime),
     /* Flujos */
     SAME(fopen), SAME(fdopen), SAME(tmpfile), SAME(remove), SAME(rename), SAME(perror),
-    SAME(getchar), SAME(putchar), SAME(puts), SAME(printf), SAME(vprintf), SAME(sprintf),
+    SAME(getchar), SAME(putchar), SAME(puts), WRAP(printf), WRAP(vprintf), SAME(sprintf),
     SAME(vsprintf), SAME(snprintf), SAME(vsnprintf), SAME(asprintf), SAME(vasprintf),
     SAME(scanf), SAME(sscanf), SAME(vsscanf),
     WRAP(fclose), WRAP(freopen), WRAP(fread), WRAP(fwrite), WRAP(fseek), WRAP(ftell),
@@ -616,7 +650,7 @@ static const BionicEntry bionic_table[] = {
     SAME(lseek64), SAME(ftruncate), SAME(ftruncate64), SAME(truncate), SAME(access), SAME(unlink),
     SAME(link), SAME(symlink), SAME(readlink), SAME(mkdir), SAME(rmdir), SAME(chdir),
     SAME(getcwd), SAME(chmod), SAME(fchmod), SAME(chown), SAME(umask), SAME(fsync),
-    SAME(fdatasync), SAME(sync), SAME(fcntl), SAME(ioctl), SAME(flock), SAME(dup), SAME(dup2),
+    SAME(fdatasync), SAME(sync), SAME(fcntl), FUNC("ioctl", arena_ioctl), SAME(flock), SAME(dup), SAME(dup2),
     SAME(pipe), SAME(pipe2), SAME(isatty), SAME(select), SAME(poll),
     WRAP(stat), WRAP(lstat), WRAP(fstat), WRAP(fstatat),
     SAME(opendir), SAME(fdopendir), SAME(closedir), SAME(rewinddir), SAME(dirfd), WRAP(readdir),

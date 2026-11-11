@@ -58,9 +58,14 @@ void context_switch(Context *save, const Context *load);
 int thread_create(uint32_t function, uint32_t argument);
 /* cede el turno; nunca vuelve antes */
 int thread_usleep(uint32_t microseconds);
+/* el thread que corre, o -1 si es el principal */
+int thread_current(void);
+/* la llamada de app_main en la que está el principal: init, step... */
+const char *thread_main_call(void);
 /* para un método de Java */
 uint64_t java_thread_create(const uint32_t *words);
-void thread_call_begin(void); /* antes de una llamada al código ARM */
+/* antes de una llamada al código ARM: name es el método, o NULL */
+void thread_call_begin(const char *name);
 void thread_call_end(void);   /* después: si terminó una de app_main, los
                                  threads tienen su ronda */
 /* elf.c */

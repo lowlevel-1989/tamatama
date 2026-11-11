@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<gameList>
+  <game>
+    <path>./Tamatama.sh</path>
+    <name>Tamatama</name>
+    <desc>Plays the Tamagotchi games for Android that you own (Classic, Classic 2, L.i.f.e. and Angel) with a controller. Copy their .apk files into ports/tamatama/apk/.</desc>
+    <developer>lowlevel.1989</developer>
+    <genre>Simulation</genre>
+    <image>./tamatama/cover.png</image>
+  </game>
+</gameList>

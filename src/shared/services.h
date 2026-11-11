@@ -24,9 +24,18 @@ char *read_file(const char *path);  /* contenido terminado en 0, o NULL */
 int asset_path(char *out, size_t room, const char *name);
 /* assets/name para leer, o NULL */
 FILE *asset_open(const char *name);
+/* La carpeta de lo que guarda el juego, propia de cada versión:
+   resources/{md5}/files (shared/apk.c). Puede no existir aún. */
+const char *save_dir(void);
 /* Un PNG en RGBA, 4 bytes por píxel, fila a fila, en memoria de malloc que se
    libera con free. NULL si no es un PNG que se sepa leer (shared/png.c). */
 uint8_t *png_decode(const uint8_t *data, size_t size, int *width, int *height);
+/* Guarda en path un PNG de width x height píxeles RGB, 3 bytes por píxel,
+   con las filas de abajo arriba, como las da glReadPixels. 1 si lo guarda. */
+int png_save_rgb(const char *path, const uint8_t *rgb, int width, int height);
+/* Lo llaman las cargas del juego: si el step actual lleva rato cargando sin
+   dibujar, enseña el aviso de carga (port/app.c). */
+void app_loading_tick(void);
 
 #ifdef __cplusplus
 }

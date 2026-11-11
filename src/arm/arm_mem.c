@@ -1,6 +1,7 @@
 /* arm/arm_mem.c: la memoria del programa ARM. libc se ocupa de lo suyo; este
    fichero se ocupa de lo que ve el juego: las direcciones fijas, la arena y el
    heap del juego. */
+#include <errno.h>
 #include "arm.h"
 #include "bridge.h"
 #include <malloc.h>
@@ -10,6 +11,7 @@ void write_all(int fd, const void *p, size_t n) {
     const char *c = p;
     while (n) {
         ssize_t w = write(fd, c, n);
+        if (w < 0 && errno == EINTR) continue; /* una señal, no un fallo */
         if (w <= 0) _exit(3);
         c += w;
         n -= (size_t)w;
@@ -21,6 +23,7 @@ void read_all(int fd, void *p, size_t n) {
     char *c = p;
     while (n) {
         ssize_t r = read(fd, c, n);
+        if (r < 0 && errno == EINTR) continue;
         if (r <= 0) exit(0);
         c += r;
         n -= (size_t)r;

@@ -37,13 +37,13 @@ static char base[PATH_MAX];
    desconocido). */
 static int in_use = -1;
 
-/* La lista de versiones compatibles: una línea APK("md5", "nombre") por cada
-   una. */
+/* La lista de versiones compatibles: una línea APK("md5", "nombre",
+   "prefijo") por cada una. */
 static const struct {
-    const char *md5, *name;
+    const char *md5, *name, *jni;
 } supported[] = {
 
-#define APK(md5, name) {md5, name},
+#define APK(md5, name, jni) {md5, name, jni},
 #if __has_include("apk_table.h")
 #include "apk_table.h"
 #endif
@@ -352,12 +352,43 @@ static void use_library_version(const char *path) {
     log_msg("[apk] %s: md5 %s is not a .so extracted from a supported .apk: no version\n", path, md5);
 }
 
+/* El md5 de un .apk, como md5_file, pero sin leerlo entero si no ha
+   cambiado: se apunta en resources/apk_md5.txt con su tamaño y su fecha, una
+   línea por .apk ("md5 tamaño fecha ruta"). El menú los mira todos al abrir,
+   y leer cientos de MB de la tarjeta cada vez lo hacía esperar. */
+static int apk_md5(const char *path, char md5[33]) {
+    struct stat st;
+    if (stat(path, &st)) return -1;
+    char cache[PATH_MAX], line[PATH_MAX + 96], key[PATH_MAX + 64];
+    snprintf(cache, sizeof cache, "%s/apk_md5.txt", resources_dir());
+    snprintf(key, sizeof key, " %lld %lld %s\n", (long long)st.st_size, (long long)st.st_mtime, path);
+    FILE *in = fopen(cache, "r");
+    if (in) {
+        while (fgets(line, sizeof line, in))
+            if (strlen(line) > 33 && line[32] == ' ' && !strcmp(line + 32, key)) {
+                memcpy(md5, line, 32);
+                md5[32] = 0;
+                fclose(in);
+                return 0;
+            }
+        fclose(in);
+    }
+    if (md5_file(path, md5)) return -1;
+    mkdir(resources_dir(), 0755);
+    FILE *out = fopen(cache, "a");
+    if (out) {
+        fprintf(out, "%s%s", md5, key);
+        fclose(out);
+    }
+    return 0;
+}
+
 /* Para apk_each: usa este .apk si es compatible. Si no, muestra su md5 y sigue
    buscando. */
 static const char *found_library;
 static int try_apk(const char *path) {
     char md5[33];
-    if (md5_file(path, md5)) {
+    if (apk_md5(path, md5)) {
         log_msg("[apk] %s: cannot read it, ignored\n", path);
         return 0;
     }
@@ -391,6 +422,48 @@ static const char *find_game(void) {
     return NULL;
 }
 
+/* Para apk_choices: apunta cada .apk aportado en la versión que le toca, si
+   esa versión aún no tiene uno. */
+static ApkChoice *choices;
+static int choice_of[64];   /* versión -> posición en choices, o -1 */
+static int try_choice(const char *path) {
+    char md5[33];
+    int i = apk_md5(path, md5) ? -1 : supported_index(md5);
+    if (i >= 0 && i < 64 && choice_of[i] >= 0 && !choices[choice_of[i]].game[0])
+        snprintf(choices[choice_of[i]].game, sizeof choices[0].game, "%s", path);
+    return 0;   /* sigue: hay que ver todos */
+}
+
+/* Las versiones que se pueden jugar: cada versión de apk_table.h con un .apk
+   en apk/ o ya extraída. Si tiene .apk, se le pasa el .apk; si solo está
+   extraída, su .so, que apk_library reconoce por el registry. */
+int apk_choices(ApkChoice *out, int max) {
+    int count = 0;
+    char dir[PATH_MAX], complete[PATH_MAX], libs[PATH_MAX];
+    choices = out;
+    for (int i = 0; supported[i].md5 && i < 64; i++) {
+        choice_of[i] = -1;
+        if (count == max) continue;
+        choice_of[i] = count;
+        out[count].name = supported[i].name;
+        out[count].md5 = supported[i].md5;
+        out[count].game[0] = 0;
+        count++;
+    }
+    apk_each(try_choice);
+    /* Las que no tienen .apk: su .so, si están extraídas; si no, fuera. */
+    int kept = 0;
+    for (int i = 0; supported[i].md5 && i < 64; i++) {
+        if (choice_of[i] < 0) continue;
+        ApkChoice choice = out[choice_of[i]];
+        join(dir, resources_dir(), supported[i].md5);
+        if (!choice.game[0] && !access(join(complete, dir, ".complete"), F_OK))
+            snprintf(choice.game, sizeof choice.game, "%s", find_library(join(libs, dir, "libs")));
+        if (choice.game[0]) out[kept++] = choice;
+    }
+    return kept;
+}
+
 /* Sin path, busca el juego (find_game). Si path es un .apk, lo comprueba, lo
    extrae si hace falta y devuelve la ruta de su .so. Si no, devuelve path tal
    cual, un .so, y su versión sale del registry. */
@@ -403,7 +476,7 @@ const char *apk_library(const char *path) {
     }
 
     char md5[33];
-    if (md5_file(path, md5)) die("cannot read the apk");
+    if (apk_md5(path, md5)) die("cannot read the apk");
     int i = supported_index(md5);
     if (i < 0) {
         log_msg("[apk] %s: md5 %s is not in src/port/apk_table.h\n", path, md5);
@@ -418,6 +491,29 @@ const char *apk_library(const char *path) {
 const char *apk_resources(void) {
     if (!base[0]) snprintf(base, sizeof base, "%s", resources_dir());
     return base;
+}
+
+/* Lo que guarda el juego, por versión: resources/{md5}/files, como el files/
+   de cada paquete en Android. Así dos versiones no se pisan la partida. Con
+   un .so desconocido, resources/files. */
+const char *save_dir(void) {
+    static char dir[PATH_MAX];
+    return join(dir, apk_resources(), "files");
+}
+
+/* El nombre completo de un método nativo: el prefijo de la versión en uso
+   (Java_..._SampleGameNatives_) y name. Con un .so desconocido, el de la
+   primera versión de la lista. Varios buffers, por si se llama otra vez
+   antes de acabar con el anterior (un nativo que llama al juego). */
+const char *apk_method(const char *name) {
+    static char names[8][160];
+    static int next;
+    int i = in_use >= 0 ? in_use : 0;
+    char *out = names[next++ % 8];
+    if (!supported[i].md5) die("no supported versions in apk_table.h");
+    if (snprintf(out, sizeof names[0], "%s%s", supported[i].jni, name) >= (int)sizeof names[0])
+        die("method name too long");
+    return out;
 }
 
 /* Las reglas propias de la versión en uso: {base_dir}/rules/{md5}.txt, si

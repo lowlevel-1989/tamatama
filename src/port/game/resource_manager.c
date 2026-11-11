@@ -1,7 +1,7 @@
 /* port/game/resource_manager.c: los ficheros locales del juego (lo que guarda)
-   van en data_dir(), donde la plataforma deja escribir: en Linux, resources/
-   junto al programa. Si el juego abre uno que no ha guardado, se busca entre
-   los assets del .apk con asset_open. */
+   van en save_dir(), una carpeta por versión: en Linux,
+   resources/{md5}/files junto al programa. Si el juego abre uno que no ha
+   guardado, se busca entre los assets del .apk con asset_open. */
 #include "services.h"
 #include "platform.h"
 #include "resource_manager.h"
@@ -32,11 +32,11 @@ static int resource_add(const char *name, FILE *file) {
     return -1;
 }
 
-/* data_dir(), con name detrás si no es NULL. Si no cabe, una ruta vacía, que no
-   abre nada. */
+/* save_dir(), con name detrás si no es NULL. Si no cabe, una ruta vacía, que
+   no abre nada. */
 static const char *local_path(const char *name) {
     static char path[PATH_MAX];
-    if (snprintf(path, sizeof path, "%s%s%s", data_dir(), name ? "/" : "", name ? name : "") >=
+    if (snprintf(path, sizeof path, "%s%s%s", save_dir(), name ? "/" : "", name ? name : "") >=
         (int)sizeof path)
         path[0] = 0;
     return path;
@@ -47,6 +47,7 @@ static FILE *resource_get(int id) {
 }
 
 int resource_open_local(const char *name) {
+    app_loading_tick();
     FILE *file = fopen(local_path(name), "rb");
     int asset = !file; /* no está guardado: se busca entre los assets */
     if (asset) file = asset_open(name);
@@ -88,6 +89,7 @@ int resource_read_file(const char *name, int offset, void *buffer, int size) {
 }
 
 int resource_open_asset(const char *name) {
+    app_loading_tick();
     FILE *file = asset_open(name);
     if (!file) {
         log_msg("[resource] open %s for reading (asset): not found\n", name);
@@ -99,7 +101,10 @@ int resource_open_asset(const char *name) {
 }
 
 int resource_create_local(const char *name) {
-    mkdir(local_path(NULL), 0755);   /* en Android esta carpeta ya existe */
+    /* En Android esta carpeta ya existe. Aquí, con un .so desconocido, puede
+       faltar también resources/. */
+    mkdir(data_dir(), 0755);
+    mkdir(local_path(NULL), 0755);
     FILE *file = fopen(local_path(name), "wb");
     if (!file) {
         log_msg("[resource] open %s for writing: failed\n", name);

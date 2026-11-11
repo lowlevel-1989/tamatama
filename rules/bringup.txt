@@ -13,6 +13,11 @@ symbol g_se_volume            @0xC2D50
 symbol gm_smartpSystemStatus  @0xC2D64
 symbol m_rand                 @0xc01c4
 symbol m_endDraw              @0xc1f88
+symbol m_para                 @0xc1ba8
+symbol m_gameSec               @0xc1d24
+symbol m_section               @0xc1f50
+symbol m_menuFlg               @0xc1ca2
+symbol m_dialogFlag            @0xc1f48
 
 symbol string_assign          @0x7cfc5
 symbol string_clone           @0x7c8e5
@@ -22,10 +27,47 @@ symbol string_dispose         @0x7bdc1
 # stub   _gamedraw              @0x3f629
 
 # watch m_rand            m_rand                      u32
-watch m_endDraw         m_endDraw                   u32
+# watch m_endDraw         m_endDraw                   u32
 watch var_bgm_volume    g_bgm_volume                f32
 watch var_se_volume     g_se_volume                 f32
 watch gm_bgm_volume     gm_smartpSystemStatus+0x83   u8
 watch gm_se_volume      gm_smartpSystemStatus+0x84   u8
+watch m_gameSec         m_gameSec                   i32  # la sección del juego: setGameSec(n)
+watch m_section         m_section                   i32  # la pantalla: el switch de dispMain
+watch m_menuFlg         m_menuFlg                   u8   # hay un menú abierto
+watch m_dialogFlag      m_dialogFlag                u8   # hay un diálogo encima
+# m_para: las posiciones que usa initCharacterData (doc/code/initCharacterData.c)
+watch para_00_id    m_para+0x00     i32   # id
+#watch para_01    m_para+0x04     i32
+#watch para_02    m_para+0x08     i32   # peso minimo
+#watch para_04    m_para+0x10     ptr   # flags: initCharacterData borra el bit 3 y 16-19
+#watch para_05    m_para+0x14     i32
+#watch para_06    m_para+0x18     i32
+#watch para_07    m_para+0x1c     i32
+#watch para_08    m_para+0x20     i32
+#watch para_09    m_para+0x24     i32   # DATA_PARAMETER[id][0x1c]; si es 2, 2 o 3 al azar
+#watch para_0a    m_para+0x28     i32
+#watch para_0b    m_para+0x2c     i32
+#watch para_0c    m_para+0x30     i32
+#watch para_0d    m_para+0x34     i32
+watch  para_0e_evol    m_para+0x38     i32   # timer de evolucion: DATA_PARAMETER[id][0x4]
+#watch para_0f    m_para+0x3c     i32   # DATA_PARAMETER[id][0x20]
+#watch para_10    m_para+0x40     i32
+#watch para_11    m_para+0x44     i32
+#watch para_12    m_para+0x48     i32
+#watch para_13    m_para+0x4c     i32
+#watch para_14    m_para+0x50     i32
+#watch para_15    m_para+0x54     i32
+#watch para_16    m_para+0x58     i32
+#watch para_17    m_para+0x5c     i32
+#watch para_18    m_para+0x60     i32
+#watch para_19    m_para+0x64     i32
+#watch para_1e    m_para+0x78     i32
+#watch para_1f    m_para+0x7c     i32
+#watch para_20    m_para+0x80     i32   # DATA_PARAMETER[id][0x4], salvo Babytchi
+#watch para_21    m_para+0x84     i32
+#watch para_22    m_para+0x88     i32
+#watch para_23    m_para+0x8c     i32
+#watch para_24    m_para+0x90     i32
 
-trap m_endDraw          m_endDraw                   u32 0
+# trap m_endDraw          m_endDraw                   u32 0

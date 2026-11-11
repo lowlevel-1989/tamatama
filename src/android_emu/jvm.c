@@ -54,10 +54,15 @@ static int jni_GetVersion(ENV_ARG) {
     (void)env;
     return 0x00010006;
 }
-/* La clase es su propio nombre, copiado. */
+/* La clase es su propio nombre, copiado. SampleGameNatives queda sin su
+   paquete, que cambia en cada versión (com/namcobandaigames/tamagotchisp/,
+   .../tamagotchilife/...): así port_table.h y arm_java_table.h valen para
+   todas. */
 static void *jni_FindClass(ENV_ARG, const char *n) {
     (void)env;
     log_msg("[jni] FindClass(%s)\n", n);
+    const char *last = strrchr(n, '/');
+    if (last && !strcmp(last + 1, "SampleGameNatives")) n = last + 1;
     return concat3(n, "", "");
 }
 /* Recorre los métodos que registra el juego. Los que tienen versión nativa

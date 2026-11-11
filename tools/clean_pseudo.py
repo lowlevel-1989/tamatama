@@ -1899,7 +1899,11 @@ def add_addresses(header, body, targets):
     names = "|".join(re.escape(name) for name in sorted(targets, key=len, reverse=True))
     pattern = re.compile(rf"(?<![\w:.>])({names})(?![\w:])")
     shown, lines = set(), []
-    for address, label in targets.get(header["name"], {}).items():
+    # Las direcciones se apuntan con el nombre corto, Clase::metodo. Una clase
+    # anidada lleva en el header el nombre entero, A::Clase::metodo.
+    name = header["name"]
+    own = targets.get(name) or targets.get("::".join(name.split("::")[-2:]), {})
+    for address, label in own.items():
         shown.add(address)
         lines.append(f"// @0x{address:x}  {label}")
     lines.append(header[0] + body.split("\n", 1)[0])

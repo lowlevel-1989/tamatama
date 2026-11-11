@@ -1,11 +1,9 @@
 /* backend/sdl/gl.c: una referencia de cómo traducir las funciones GLES1 que
-   llama el .so a la OpenGL de tu PC, con un ejemplo de cada tipo de argumento.
+   llama el .so a la OpenGL de tu PC (o pasarlas tal cual con GLES=1), con un ejemplo de cada tipo de argumento.
    Para añadir otra: copia el ejemplo que se le parezca y añade su línea a
    backend/gl_table.h. Las que falten salen en el informe como
    UNIMPLEMENTED. */
-#define GL_GLEXT_PROTOTYPES 1
-#include <GL/gl.h>
-#include <GL/glext.h>
+#include "glcompat.h"
 #include "common.h"
 
 /* Los argumentos de GLES1 ocupan una palabra cada uno: los cuatro primeros van
@@ -28,6 +26,10 @@ static void *arg_ptr(const Regs *r, int i) {
 /* OpenGL de escritorio no admite arrays GL_FIXED. Se avisa una vez, porque no
    dibujarían nada. */
 static void check_array_type(uint32_t type) {
+#ifdef ARENA_GLES
+    (void)type; /* GLES sí los admite */
+    return;
+#endif
     static int warned;
     if (type == 0x140C && !warned) {
         warned = 1;
@@ -53,7 +55,15 @@ void native_glFlush(Regs *r) { glFlush(); }
 
 void native_glClear(Regs *r) { glClear(arg_word(r, 0)); }
 void native_glClearColor(Regs *r) { glClearColor(arg_float(r, 0), arg_float(r, 1), arg_float(r, 2), arg_float(r, 3)); }
-void native_glDrawArrays(Regs *r) { glDrawArrays(arg_word(r, 0), arg_word(r, 1), arg_word(r, 2)); }
+/* Cuántas veces ha dibujado el juego: app.c enseña "loading" hasta la
+   primera (backend_game_drew). */
+static int game_draws;
+int backend_game_drew(void) { return game_draws > 0; }
+int backend_draw_count(void) { return game_draws; }
+void native_glDrawArrays(Regs *r) {
+    game_draws++;
+    glDrawArrays(arg_word(r, 0), arg_word(r, 1), arg_word(r, 2));
+}
 void native_glVertexPointer(Regs *r) { check_array_type(arg_word(r, 1)); glVertexPointer(arg_word(r, 0), arg_word(r, 1), arg_word(r, 2), arg_ptr(r, 3)); }
 void native_glColorPointer(Regs *r) { check_array_type(arg_word(r, 1)); glColorPointer(arg_word(r, 0), arg_word(r, 1), arg_word(r, 2), arg_ptr(r, 3)); }
 
@@ -81,4 +91,21 @@ void native_glPopMatrix(Regs *r) { (void)r; glPopMatrix(); }
    el stack. */
 void native_glMatrixMode(Regs *r) { glMatrixMode(arg_word(r, 0)); }
 void native_glLoadIdentity(Regs *r) { (void)r; glLoadIdentity(); }
-void native_glOrthof(Regs *r) { glOrtho(arg_float(r, 0), arg_float(r, 1), arg_float(r, 2), arg_float(r, 3), arg_float(r, 4), arg_float(r, 5)); }
+void native_glOrthof(Regs *r) { gl_ortho(arg_float(r, 0), arg_float(r, 1), arg_float(r, 2), arg_float(r, 3), arg_float(r, 4), arg_float(r, 5)); }
+
+/* Las de Tamagotchi Angel y L.i.f.e. glColor4ub es el color de lo que se
+   dibuja sin textura, con cuatro bytes. glTexEnvf, cómo se mezcla la textura
+   con ese color (GL_MODULATE, GL_REPLACE...). */
+void native_glColor4ub(Regs *r) {
+    glColor4ub((GLubyte)arg_word(r, 0), (GLubyte)arg_word(r, 1), (GLubyte)arg_word(r, 2), (GLubyte)arg_word(r, 3));
+}
+void native_glTexEnvf(Regs *r) { glTexEnvf(arg_word(r, 0), arg_word(r, 1), arg_float(r, 2)); }
+/* Los buffers: el .so los crea y los borra, pero no importa glBindBuffer ni
+   glBufferData, así que nunca dibuja con ellos. Basta con dar números
+   distintos. */
+void native_glGenBuffers(Regs *r) {
+    static uint32_t next = 1;
+    uint32_t *ids = arg_ptr(r, 1);
+    for (uint32_t i = 0; i < arg_word(r, 0); i++) ids[i] = next++;
+}
+void native_glDeleteBuffers(Regs *r) { (void)r; }

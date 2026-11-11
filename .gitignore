@@ -5,6 +5,14 @@
 
 # La libc ARM que descarga el Makefile
 /sysroot/
+# Lo que descarga y construye make PLATFORM=android
+/android/deps/
+/tamatama.apk
+/tamatama.apk.idsig
+/portmaster/deps/
+/tamatama.zip
+# Los paquetes de cada versión, para subirlos a las releases de GitHub
+/release/
 
 # El juego: el .apk y lo que se extrae de él
 /apk/
@@ -13,6 +21,10 @@
 decode.txt
 dump.txt
 
-# Lo que deja una ejecución
+# Lo que deja una ejecución: las capturas de la cámara del juego y los
+# controles de "Configure controls"
+/screenshots/
+/keyboard.map
+/controller.map
 *.core
 __pycache__/

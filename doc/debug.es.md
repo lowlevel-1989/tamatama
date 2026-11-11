@@ -83,12 +83,73 @@ En un fichero de reglas (`--rules FICHERO` o `rules/{md5}.txt`):
 ```
 symbol g_rand  @0xc01c4           # un nombre para un lugar que el .so no exporta
 watch  rand    g_rand  u32        # avisa de cada cambio de esta variable
+trap   rand    g_rand  u32 0      # qué instrucción la pone a 0
 pause  init                       # para cada vez que vuelve este método (necesita --debug)
 trace  on                         # registra cada llamada a una función con hook
 ```
 
 Sin la consola, los cambios de los watch van al log; una regla `pause` solo
 avisa.
+
+## Quién escribe una variable: trap
+
+Un watch dice cuándo cambia una variable; un trap dice además qué instrucción
+del .so la escribió. Solo existe como regla (no en la consola) y avisa en el
+log:
+
+```
+trap NOMBRE LUGAR [TIPO] [VALOR]
+```
+
+LUGAR y TIPO son los de `watch`. Con VALOR, escrito como lo muestra un watch,
+solo avisa cuando la variable toma ese valor; sin él, de cada cambio. Por
+ejemplo:
+
+```
+trap m_endDraw  m_endDraw  u32 0
+```
+
+```
+[trap] m_endDraw at 0x608c1f88 = 0, waiting for 0
+[trap] m_endDraw 2 -> 0, written at 0x60838882 (@0x38882 Clase::metodo+0x3e) (lr 0x6083a54c (@0x3a54c Clase::otro+0xd8)) by step
+```
+
+`written at` es la instrucción que escribió el valor: mírala en radare, con
+`e asm.bits=16` si el código es Thumb. `lr` es su registro lr en ese momento:
+si la escritura está en una función hoja (un setter), es quien la llamó. `by` dice quién corría: la llamada de
+app_main (`init`, `step`...) o `thread N`, el número que sale en `[thread] N:`
+al crearse el thread.
+
+Cómo funciona (src/arm/trap.c): con la dirección el loader solo puede leer la
+variable, así que su página (4096 bytes) se deja de solo lectura. Leer sigue
+funcionando, también para un watch de la misma variable; escribir detiene el
+juego con SIGSEGV:
+
+```
+safe point -> ¿la variable tiene otro valor que VALOR?
+  -> no: no puede pasar a él, así que la página queda abierta
+  -> sí: la página pasa a solo lectura
+una instrucción escribe en la página -> SIGSEGV
+  -> se abre la página y se pone un udf en la instrucción siguiente
+  -> la escritura se repite y se hace
+  -> se ejecuta el udf -> SIGILL: ¿cambió la variable? -> apunta pc y quién
+  -> se restaura la instrucción y se vuelve a cerrar la página
+siguiente safe point -> ¿tomó VALOR? -> muestra quién lo escribió
+```
+
+`udf` es una instrucción que ARM reserva como no válida: ejecutarla lanza
+SIGILL. El trap la usa como breakpoint justo después de la escritura, así que
+la página solo está abierta durante una instrucción y se ve cada escritura,
+también varias en un mismo turno.
+
+Límites:
+
+- Solo ve lo que escribe el código ARM. Bajo QEMU, lo que escriben las
+  funciones nativas pasa por loader (x86_64) y no se ve.
+- Si la instrucción siguiente a la escritura está en un bloque IT de Thumb y su
+  condición no se cumple, el udf no se ejecuta y la página se queda abierta
+  hasta el safe point. Entonces avisa con `not caught` en vez de dar un pc
+  equivocado.
 
 ## Opciones del programa
 

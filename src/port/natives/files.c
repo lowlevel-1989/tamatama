@@ -4,6 +4,7 @@
    llama a game/resource_manager.c y deja el resultado en r0. */
 #include "common.h"
 #include "resource_manager.h"
+#include "controls.h"
 
 void native_OnInputStreamOpenLocalFile(Regs *r) {
     const JniObject *name = to_local(r->r[0]);
@@ -59,6 +60,8 @@ void native_OnReadFile(Regs *r) {
     arm_ptr java_bytes = shared_alloc((uint32_t)(sizeof(JniObject) + size + 1));
     JniObject *bytes = to_local(java_bytes);
     int got = resource_read_file((const char *)name->data, offset, bytes->data, size);
+    /* Los CSV de botones dicen al mando en qué pantalla está. */
+    if (got > 0) controls_csv_read((const char *)name->data, (const char *)bytes->data, got);
     bytes->len = got > 0 ? (uint32_t)got : 0;
     bytes->dirty = 0;
     bytes->data[bytes->len] = 0;
@@ -83,4 +86,43 @@ void native_OnOutputStreamWrite(Regs *r) {
     int id = (int)r->r[0];
     const JniObject *bytes = to_local(r->r[1]); /* el byte[] que llega */
     r->r[0] = (uint32_t)resource_write(id, bytes->data, (int)bytes->len);
+}
+
+/* La partida de Angel y L.i.f.e.: en vez de los streams, un fichero entero de
+   golpe. OnReadGameData(nombre, tamaño) devuelve sus bytes en un byte[], o
+   null si aún no hay partida (el juego crea una nueva). */
+void native_OnReadGameData(Regs *r) {
+    const JniObject *name = to_local(r->r[0]);
+    int size = (int)r->r[1];
+    int id = resource_open_local((const char *)name->data);
+    if (id < 0 || size < 0) {
+        if (id >= 0) resource_close(id);
+        r->r[0] = 0;
+        return;
+    }
+    /* java_bytes es el byte[] tal como lo ve el juego; bytes, el mismo objeto
+       visto desde aquí, para rellenarlo. */
+    arm_ptr java_bytes = shared_alloc((uint32_t)(sizeof(JniObject) + size + 1));
+    JniObject *bytes = to_local(java_bytes);
+    int got = resource_read(id, bytes->data, size);
+    resource_close(id);
+    if (got < 0) {
+        r->r[0] = 0;
+        return;
+    }
+    bytes->len = (uint32_t)got;
+    bytes->dirty = 0;
+    bytes->data[got] = 0;
+    r->r[0] = java_bytes;
+}
+
+/* OnWriteGameData(nombre, byte[]): guarda el fichero entero. Devuelve true si
+   se ha escrito todo. */
+void native_OnWriteGameData(Regs *r) {
+    const JniObject *name = to_local(r->r[0]);
+    const JniObject *bytes = to_local(r->r[1]);
+    int id = resource_create_local((const char *)name->data);
+    int wrote = id < 0 ? -1 : resource_write(id, bytes->data, (int)bytes->len);
+    int closed = id < 0 ? -1 : resource_close(id);
+    r->r[0] = wrote == (int)bytes->len && closed >= 0;
 }

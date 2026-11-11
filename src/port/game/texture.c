@@ -33,8 +33,16 @@ static uint8_t *read_asset(const char *name, size_t *size) {
 }
 
 int texture_upload(const char *name, int *width_out, int *height_out) {
+    app_loading_tick();
     size_t size = 0;
     uint8_t *data = read_asset(name, &size);
+    /* Angel y L.i.f.e. piden algunas sin extensión, como
+       "CharaNo01_obaketti2gou": son las mismas .png. */
+    if (!data && !strchr(name, '.')) {
+        char with_png[256];
+        if (snprintf(with_png, sizeof with_png, "%s.png", name) < (int)sizeof with_png)
+            data = read_asset(with_png, &size);
+    }
     if (!data) {
         log_msg("[texture] %s: not found\n", name);
         return -1;
@@ -50,6 +58,12 @@ int texture_upload(const char *name, int *width_out, int *height_out) {
        color ya multiplicado por el alfa. */
     for (size_t i = 0, n = (size_t)width * height * 4; i < n; i += 4)
         for (int k = 0; k < 3; k++) rgba[i + k] = (uint8_t)(rgba[i + k] * rgba[i + 3] / 255);
+    /* La estrella "new" que marca lo que era nuevo en cada versión (como
+       Generation 2 en la pantalla de elegir generación): aquí ya no lo es
+       nada, así que se carga transparente. Mismo tamaño, sin cambiar dónde
+       la pone el juego. */
+    if (!strncmp(name, "new_00000", 9) && (!name[9] || !strcmp(name + 9, ".png")))
+        memset(rgba, 0, (size_t)width * height * 4);
     int gl_name = backend_texture_create(rgba, width, height);
     free(rgba);
     *width_out = width;

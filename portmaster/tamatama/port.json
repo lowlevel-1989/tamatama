@@ -1,0 +1,34 @@
+{
+  "version": 4,
+  "name": "tamatama.zip",
+  "items": [
+    "Tamatama.sh",
+    "tamatama"
+  ],
+  "items_opt": [],
+  "attr": {
+    "title": "Tamatama",
+    "porter": [
+      "lowlevel.1989"
+    ],
+    "desc": "Plays the Tamagotchi games for Android that you own (Tamagotchi Classic, Classic 2, L.i.f.e. and Angel) with a controller: the directions move a pointer between the buttons on screen, and A, B and C of the device are on the face buttons.",
+    "desc_md": null,
+    "inst": "Copy the original .apk files of the games into ports/tamatama/apk/. When you start the port, choose the version in the menu.",
+    "inst_md": null,
+    "genres": [
+      "simulation"
+    ],
+    "image": null,
+    "rtr": false,
+    "exp": false,
+    "runtime": [],
+    "store": [],
+    "availability": "full",
+    "reqs": [],
+    "arch": [
+      "aarch64",
+      "armhf"
+    ],
+    "min_glibc": "2.28"
+  }
+}

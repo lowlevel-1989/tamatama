@@ -83,11 +83,70 @@ In a rules file (`--rules FILE` or `rules/{md5}.txt`):
 ```
 symbol g_rand  @0xc01c4           # a name for a place the .so does not export
 watch  rand    g_rand  u32        # report every change of this variable
+trap   rand    g_rand  u32 0      # which instruction sets it to 0
 pause  init                       # stop every time this method returns (needs --debug)
 trace  on                         # log every call to a hooked function
 ```
 
 Without the console, watch changes go to the log; a `pause` rule only warns.
+
+## Who writes a variable: trap
+
+A watch tells you when a variable changes; a trap also tells you which
+instruction of the .so wrote it. It only exists as a rule (not in the console)
+and reports to the log:
+
+```
+trap NAME PLACE [TYPE] [VALUE]
+```
+
+PLACE and TYPE are those of `watch`. With VALUE, written as a watch shows it,
+it only reports when the variable takes that value; without it, every change.
+For example:
+
+```
+trap m_endDraw  m_endDraw  u32 0
+```
+
+```
+[trap] m_endDraw at 0x608c1f88 = 0, waiting for 0
+[trap] m_endDraw 2 -> 0, written at 0x60838882 (@0x38882 Class::method+0x3e) (lr 0x6083a54c (@0x3a54c Class::other+0xd8)) by step
+```
+
+`written at` is the instruction that wrote the value: look at it in radare,
+with `e asm.bits=16` if the code is Thumb. `lr` is its lr register at that
+moment: if the write is in a leaf function (a setter), it is the caller.
+`by` says who was running: the
+call of app_main (`init`, `step`...) or `thread N`, the number shown as
+`[thread] N:` when the thread was created.
+
+How it works (src/arm/trap.c): having the address only lets the loader read the
+variable, so its page (4096 bytes) is made read only. Reading still works, also
+for a watch on the same variable; writing stops the game with SIGSEGV:
+
+```
+safe point -> does the variable have another value than VALUE?
+  -> no: it cannot change to it, so the page stays open
+  -> yes: the page becomes read only
+an instruction writes to the page -> SIGSEGV
+  -> the page is opened and an udf goes on the next instruction
+  -> the write is repeated and done
+  -> the udf runs -> SIGILL: did the variable change? -> note pc and who
+  -> the instruction is restored and the page closed again
+next safe point -> did it take VALUE? -> report who wrote it
+```
+
+`udf` is an instruction ARM reserves as invalid: running it raises SIGILL. The
+trap uses it as a breakpoint right after the write, so the page is open for a
+single instruction and every write is seen, even several in one turn.
+
+Limits:
+
+- It only sees what ARM code writes. Under QEMU, what the native functions
+  write goes through loader (x86_64) and is not seen.
+- If the instruction after the write is in a Thumb IT block whose condition
+  fails, the udf does not run and the page stays open until the safe point.
+  Then it reports `not caught` instead of a wrong pc.
 
 ## Program options
 

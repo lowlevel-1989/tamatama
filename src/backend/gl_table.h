@@ -31,3 +31,8 @@ NATIVE("glPopMatrix", native_glPopMatrix)
 NATIVE("glMatrixMode", native_glMatrixMode)
 NATIVE("glLoadIdentity", native_glLoadIdentity)
 NATIVE("glOrthof", native_glOrthof)
+/* Las de Tamagotchi Angel y L.i.f.e. */
+NATIVE("glColor4ub", native_glColor4ub)
+NATIVE("glTexEnvf", native_glTexEnvf)
+NATIVE("glGenBuffers", native_glGenBuffers)
+NATIVE("glDeleteBuffers", native_glDeleteBuffers)

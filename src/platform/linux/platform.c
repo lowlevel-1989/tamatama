@@ -19,9 +19,12 @@
 
 /* La carpeta del ejecutable, sin la barra final. Se calcula una vez:
    /proc/self/exe es el programa en ejecución (bajo QEMU, qemu-arm responde con
-   la ruta de loader-arm). */
+   la ruta de loader-arm). ARENA_BASE la fija: en Android loader-arm está entre
+   las librerías de la app, y sus datos en otra carpeta. */
 const char *base_dir(void) {
     static char dir[PATH_MAX];
+    const char *forced = getenv("ARENA_BASE");
+    if (!dir[0] && forced && *forced) snprintf(dir, sizeof dir, "%s", forced);
     if (!dir[0]) {
         ssize_t n = readlink("/proc/self/exe", dir, sizeof dir - 1);
         if (n <= 0) die("cannot find the program folder: /proc/self/exe is not readable");
@@ -74,3 +77,23 @@ const char *data_dir(void) {
 
 /* Sin buffer: stderr ya escribe cada mensaje en cuanto llega. */
 void platform_log(const char *text) { fputs(text, stderr); }
+
+/* En Linux la captura ya está donde el usuario la busca. */
+void platform_screenshot_saved(const char *path) { (void)path; }
+
+/* xdg-open en un proceso aparte, sin esperarlo: el juego sigue. */
+int platform_open_url(const char *url) {
+    pid_t child = fork();
+    if (child < 0) return 0;
+    if (child == 0) {
+        setsid();
+        execlp("xdg-open", "xdg-open", url, (char *)NULL);
+        _exit(127);
+    }
+    return 1;
+}
+
+int platform_vibrate(int ms) {
+    (void)ms;
+    return 0;
+}

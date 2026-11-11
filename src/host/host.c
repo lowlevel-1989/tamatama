@@ -16,16 +16,23 @@
    Los mensajes están definidos en shared/common.h: TO_ARM_* van de aquí a
    loader-arm y TO_HOST_* vienen de loader-arm hacia aquí. Todo va en palabras
    de 32 bits. */
+#include <errno.h>
 #include <limits.h>
 #include <unistd.h>
 #include <sys/mman.h>
 #include <sys/utsname.h>
 #include <sys/wait.h>
+#include <pthread.h>
+#include <sys/syscall.h>
 #include "common.h"
 #include "bridge.h"
 #include "environment.h"
 #include "platform.h"
 #include "debug.h"
+#include "transfer.h"
+#ifdef __ANDROID__
+#include "sandbox.h"
+#endif
 
 /* La misma arena tiene dos direcciones: dónde la ve este proceso (la elige
    Linux) y dónde la ve loader-arm (0x60000000 si estaba libre). to_local y
@@ -37,6 +44,15 @@ arm_ptr arena_arm;
 static int pipe_to_arm = -1, pipe_from_arm = -1;
 /* El proceso de QEMU. */
 static pid_t qemu_pid;
+#ifdef __ANDROID__
+/* El thread que pasa los mensajes de loader-arm a logcat (arm_log). */
+static pthread_t log_reader;
+static int log_reader_on;
+#endif
+/* 1 si la CPU ejecuta ARM de 32 bits: loader-arm --serve va sin QEMU, en el
+   mismo papel. loader-arm no puede quedarse con todo (execv): el que se
+   construye junto a loader es estático y sin pantalla (backend dummy). */
+static int serve_on_cpu;
 /* El JNIEnv del juego y la base del .so, tal como los ve loader-arm. Llegan en
    su primer mensaje. */
 static arm_ptr jni_env_arm;
@@ -44,25 +60,57 @@ static arm_ptr so_base_arm;
 /* Cuánto se ha entregado de la arena cuando no hay .so. */
 static uint32_t arena_used;
 
-/* loader-arm está junto a este programa, no en el directorio actual. */
+/* loader-arm está junto a este programa, no en el directorio actual, salvo
+   que LOADER_ARM diga otra cosa (Android: la carpeta de las librerías de la
+   app, platform/android). */
 static const char *loader_arm_path(void) {
     static char path[PATH_MAX];
+    const char *forced = getenv("LOADER_ARM");
+    if (forced && *forced) return forced;
     if (!path[0] && snprintf(path, sizeof path, "%s/loader-arm", base_dir()) >= (int)sizeof path)
         die("the program folder path is too long");
     return path;
 }
 
+/* El hijo de --probe. */
+static void run_probe(void *unused) {
+    (void)unused;
+    fclose(stderr); /* si no puede, no queremos ver el error */
+    execl(loader_arm_path(), loader_arm_path(), "--probe", (char *)NULL);
+    _exit(127);
+}
+
+/* Un hijo que ejecuta child(context), y su pid. En Android, vigilado por
+   host/sandbox.c: el seccomp de las apps mataría a loader-arm y a qemu-arm. */
+static pid_t spawn_child(void (*child)(void *), void *context) {
+#ifdef __ANDROID__
+    return sandbox_spawn(child, context);
+#else
+    pid_t pid = fork();
+    if (pid == 0) {
+        child(context);
+        _exit(127);
+    }
+    return pid;
+#endif
+}
+
+/* Espera a que termine el hijo de spawn_child y devuelve su estado. */
+static int wait_child(pid_t pid) {
+    int status = 0;
+#ifdef __ANDROID__
+    (void)pid;
+    status = sandbox_wait();
+#else
+    waitpid(pid, &status, 0);
+#endif
+    return status;
+}
+
 /* ¿Puede este sistema ejecutar programas ARM de 32 bits sin ayuda? Lo averigua
    probando: lanza loader-arm --probe, que termina con el código 42. */
 static int can_run_arm32(void) {
-    pid_t child = fork();
-    if (child == 0) {
-        fclose(stderr); /* si no puede, no queremos ver el error */
-        execl(loader_arm_path(), loader_arm_path(), "--probe", (char *)NULL);
-        _exit(127);
-    }
-    int status = 0;
-    waitpid(child, &status, 0);
+    int status = wait_child(spawn_child(run_probe, NULL));
     return WIFEXITED(status) && WEXITSTATUS(status) == 42;
 }
 /* Decide quién ejecuta el ARM. Combina lo fijado al compilar con lo que dice el
@@ -94,11 +142,17 @@ static void recv_from_arm(void *buffer, size_t n) {
     while (n) {
         ssize_t got = read(pipe_from_arm, cursor, n);
         if (got == 0) {
-            int status;
-            if (waitpid(qemu_pid, &status, 0) == qemu_pid && WIFEXITED(status) && !WEXITSTATUS(status))
-                exit(0);
+#ifdef __ANDROID__
+            /* sus últimos mensajes, antes de terminar */
+            if (log_reader_on) pthread_join(log_reader, NULL);
+#endif
+            int status = wait_child(qemu_pid);
+            if (WIFEXITED(status) && !WEXITSTATUS(status)) exit(0);
+            if (WIFSIGNALED(status)) log_msg("[bridge] loader-arm killed by signal %d\n", WTERMSIG(status));
+            else log_msg("[bridge] loader-arm exit code %d\n", WEXITSTATUS(status));
             die("loader-arm has exited: look at the messages above");
         }
+        if (got < 0 && errno == EINTR) continue; /* una señal, no un fallo */
         if (got < 0) die_errno("reading from loader-arm");
         cursor += (size_t)got;
         n -= (size_t)got;
@@ -110,6 +164,7 @@ static void send_to_arm(const void *buffer, size_t n) {
     const char *cursor = buffer;
     while (n) {
         ssize_t sent = write(pipe_to_arm, cursor, n);
+        if (sent < 0 && errno == EINTR) continue;
         if (sent <= 0) die_errno("writing to loader-arm");
         cursor += (size_t)sent;
         n -= (size_t)sent;
@@ -267,18 +322,121 @@ void arm_memory_range(arm_ptr *start, uint32_t *bytes) {
 }
 
 
+#ifdef __ANDROID__
+/* Los mensajes de loader-arm, línea a línea, a los de este proceso
+   (platform_log: logcat). */
+static void *arm_log(void *argument) {
+    FILE *in = fdopen(*(int *)argument, "r");
+    char line[1024];
+    while (in && fgets(line, sizeof line, in)) platform_log(line);
+    return NULL;
+}
+#endif
+
+/* Lo que el hijo necesita para arrancar loader-arm: sus extremos de los
+   pipes, la arena y las opciones. */
+typedef struct {
+    int from_host, to_host, arena, log_fd;
+    const char *so_path, *rules_path;
+    int trace, callers;
+} Child;
+
+/* El hijo: pone los descriptores donde los espera loader-arm y lo arranca,
+   bajo QEMU o directo (serve_on_cpu). No vuelve. */
+static void run_loader_arm(void *context) {
+    const Child *c = context;
+#ifdef __ANDROID__
+    /* En Android nadie lee stdout ni stderr: van al pipe de
+       arm_log. Antes que el resto: ese descriptor puede ser el 3, el 4 o el 5. */
+    dup2(c->log_fd, 1);
+    dup2(c->log_fd, 2);
+#endif
+    /* 
+     * El hijo pone cada descriptor en el número que espera loader-arm: 3, 4
+     * y 5. 
+     * Antes los copia con dup a números más altos, 
+     * para no pisar ninguno de los que aún necesita. 
+     * Después cierra el resto. Así, cuando este proceso cierre 
+     * su extremo de los pipes, loader-arm verá el final de los pipes. */
+    int from_host = dup(c->from_host), 
+        to_host   = dup(c->to_host), 
+        arena     = dup(c->arena);
+
+
+    // Apuntamos a los pipes originales y asi no repetimos
+    // dup2(viejo, nuevo)
+    dup2(from_host, FD_FROM_HOST);
+    dup2(to_host,   FD_TO_HOST);
+    dup2(arena,     FD_ARENA);
+
+    // 0, 1, 2   stdin, stdout, stderr
+    // 3         FD_FROM_HOST
+    // 4         FD_TO_HOST
+    // 5         FD_ARENA
+    //
+    // Se cierran todos los demas. 64 es solo por si abrimos
+    // mas en un futuro y no queremos basura.
+    for (int fd = 6; fd < 64; fd++) close(fd);
+
+
+    const char *qemu = getenv("QEMU_ARM");
+    if (!qemu) qemu = "qemu-arm";
+
+   /* Modo --serve
+    *
+    * - Toma la arena del descriptor 5, 
+    *   en lugar de reservarla para sí mismo.
+    * - Usa un stack dentro de la arena, 
+    *   para que loader pueda leer los argumentos.
+    * - Envía los mensajes de arranque por el descriptor 4.
+    * - Espera órdenes por el descriptor 3, 
+    *   en lugar de ejecutar app_main.
+    * - Envía las funciones nativas a loader,
+    *   en lugar de ejecutarlas él.
+    */
+
+    const char *args[8];
+    int count = 0;
+    if (!serve_on_cpu) args[count++] = qemu;
+    args[count++] = loader_arm_path();
+    args[count++] = "--serve";
+    if (c->trace) args[count++] = "--trace";
+    if (c->callers) args[count++] = "--callers";
+    /* Las reglas, ya resueltas, van como opción: antes del .so, que es el
+       primer argumento que no empieza por --. */
+    char rules_option[PATH_MAX + 16];
+    if (c->rules_path) {
+        snprintf(rules_option, sizeof rules_option, "--rules=%s", c->rules_path);
+        args[count++] = rules_option;
+    }
+    args[count++] = c->so_path;
+    args[count] = NULL;
+    execvp(args[0], (char *const *)args);
+    perror(serve_on_cpu ? "cannot run loader-arm" : "cannot run qemu-arm");
+    _exit(127);
+}
+
 /* Crea la arena y los pipes, lanza loader-arm bajo QEMU y espera a que termine
    de inicializarse. Al volver, el .so ya está cargado y su JNI_OnLoad ya se ha
    ejecutado. */
 static void start_qemu(const char *so_path, const char *rules_path, int trace, int callers) {
     int to_arm_fds[2], from_arm_fds[2];
     if (pipe(to_arm_fds) || pipe(from_arm_fds)) die_errno("pipe");
+#ifdef __ANDROID__
+    int log_fds[2];
+    if (pipe(log_fds)) die_errno("pipe");
+#endif
 
     /* 
      * Un memfd es un fichero anónimo en memoria: 
      * los dos procesos pueden proyectarlo y ver las mismas páginas. 
      * Ocupa 256 MiB de direcciones, pero solo gasta memoria lo que se toca. */
+#if defined(__ANDROID__) && __ANDROID_API__ < 30
+    /* la libc de Android no tiene memfd_create hasta la API 30; el kernel sí */
+    int arena_fd = (int)syscall(__NR_memfd_create, "loader-arena", 0);
+#else
     int arena_fd = memfd_create("loader-arena", 0);
+#endif
     if (arena_fd < 0 || ftruncate(arena_fd, ARENA_BYTES)) die_errno("memfd");
 
 
@@ -289,75 +447,22 @@ static void start_qemu(const char *so_path, const char *rules_path, int trace, i
     if (arena_local == MAP_FAILED) die_errno("mmap");
 
     // Ejecutamos el proceso de qemu
-    qemu_pid = fork();
-    if (qemu_pid == 0) {
-        /* 
-         * El hijo pone cada descriptor en el número que espera loader-arm: 3, 4
-         * y 5. 
-         * Antes los copia con dup a números más altos, 
-         * para no pisar ninguno de los que aún necesita. 
-         * Después cierra el resto. Así, cuando este proceso cierre 
-         * su extremo de los pipes, loader-arm verá el final de los pipes. */
-        int from_host = dup(to_arm_fds[0]), 
-            to_host   = dup(from_arm_fds[1]), 
-            arena     = dup(arena_fd);
-
-
-        // Apuntamos a los pipes originales y asi no repetimos
-        // dup2(viejo, nuevo)
-        dup2(from_host, FD_FROM_HOST);
-        dup2(to_host,   FD_TO_HOST);
-        dup2(arena,     FD_ARENA);
-
-        // 0, 1, 2   stdin, stdout, stderr
-        // 3         FD_FROM_HOST
-        // 4         FD_TO_HOST
-        // 5         FD_ARENA
-        //
-        // Se cierran todos los demas. 64 es solo por si abrimos
-        // mas en un futuro y no queremos basura.
-        for (int fd = 6; fd < 64; fd++) close(fd);
-
-        const char *qemu = getenv("QEMU_ARM");
-        if (!qemu) qemu = "qemu-arm";
-
-       /* Modo --serve
-        *
-        * - Toma la arena del descriptor 5, 
-        *   en lugar de reservarla para sí mismo.
-        * - Usa un stack dentro de la arena, 
-        *   para que loader pueda leer los argumentos.
-        * - Envía los mensajes de arranque por el descriptor 4.
-        * - Espera órdenes por el descriptor 3, 
-        *   en lugar de ejecutar app_main.
-        * - Envía las funciones nativas a loader,
-        *   en lugar de ejecutarlas él.
-        */
-
-        const char *args[8];
-        int count = 0;
-        args[count++] = qemu;
-        args[count++] = loader_arm_path();
-        args[count++] = "--serve";
-        if (trace) args[count++] = "--trace";
-        if (callers) args[count++] = "--callers";
-        /* Las reglas, ya resueltas, van como opción: antes del .so, que es el
-           primer argumento que no empieza por --. */
-        char rules_option[PATH_MAX + 16];
-        if (rules_path) {
-            snprintf(rules_option, sizeof rules_option, "--rules=%s", rules_path);
-            args[count++] = rules_option;
-        }
-        args[count++] = so_path;
-        args[count] = NULL;
-        execvp(qemu, (char *const *)args);
-        perror("cannot run qemu-arm");
-        _exit(127);
-    }
+    Child child = {to_arm_fds[0], from_arm_fds[1], arena_fd, -1, so_path, rules_path, trace, callers};
+#ifdef __ANDROID__
+    child.log_fd = log_fds[1];
+#endif
+    qemu_pid = spawn_child(run_loader_arm, &child);
+    if (qemu_pid < 0) die_errno("fork");
 
     /* El padre cierra los extremos del hijo y se queda con los suyos. */
     close(to_arm_fds[0]);
     close(from_arm_fds[1]);
+#ifdef __ANDROID__
+    close(log_fds[1]);
+    static int log_fd;
+    log_fd = log_fds[0];
+    log_reader_on = !pthread_create(&log_reader, NULL, arm_log, &log_fd);
+#endif
     close(arena_fd);
 
     pipe_to_arm = to_arm_fds[1];
@@ -388,8 +493,7 @@ static void stop_qemu(void) {
     uint32_t request[2] = {TO_ARM_EXIT, 0};
     send_to_arm(request, 8);
     close(pipe_to_arm);
-    int status;
-    waitpid(qemu_pid, &status, 0);
+    wait_child(qemu_pid);
 }
 
 
@@ -399,9 +503,22 @@ static void stop_qemu(void) {
  * Con --debug abre la consola de debug, y con --debug=pause 
  * el juego espera en el primer método a que le digas que siga.
  */
+/* Los argumentos para loader-arm cuando el juego sale del menú: los mismos,
+   sin --menu y con el juego. */
+static char **with_game(int argc, char **argv, const char *game) {
+    char **out = malloc(sizeof *out * (size_t)(argc + 2));
+    int n = 0;
+    for (int i = 0; i < argc; i++)
+        if (strcmp(argv[i], "--menu")) out[n++] = argv[i];
+    out[n++] = (char *)game;
+    out[n] = NULL;
+    return out;
+}
+
 int main(int argc, char **argv) {
-    int debug = 0, trace = 0, callers = 0;
+    int debug = 0, trace = 0, callers = 0, menu = 0;
     const char *rules_option = NULL, *game = NULL;
+    log_msg("[tamatama] version %s\n", TAMATAMA_VERSION);
     /* Las opciones pueden ir en cualquier posición. El primer argumento que no
        es una opción es el juego; los demás se ignoran. */
     for (int i = 1; i < argc; i++) {
@@ -415,37 +532,41 @@ int main(int argc, char **argv) {
         else if (debug_option) debug = debug_option;
         else if (!strcmp(argv[i], "--trace")) trace = 1;
         else if (!strcmp(argv[i], "--callers")) callers = 1;
+        else if (!strcmp(argv[i], "--menu")) menu = 1;
+        else if (!strcmp(argv[i], "--transfer")) return transfer_main();
         else if (!strcmp(argv[i], "--help")) {
-            usage("loader", "  --trace        log every call to a hooked function\n"
+            usage("loader", "  --menu         choose the game in a menu, before loading it (ignored\n"
+                            "                 when a game is given)\n"
+                            "  --transfer     only Transfer Save: pass a save to another device\n"
+                            "  --trace        log every call to a hooked function\n"
                             "  --callers      show where each Java method is called from\n"
                             "  --debug        open the debug console (connect with tools/console.py)\n"
                             "  --debug pause  the same, and wait for the console before the first method\n"
                             "                 (also --debug=pause)\n",
                   "  LOADER_ARM_RUNNER=cpu|qemu  who runs the ARM code, instead of detecting it\n"
-                  "  QEMU_ARM=path               the qemu-arm to use\n");
+                  "  QEMU_ARM=path               the qemu-arm to use\n"
+                  "  LOADER_ARM=path             the loader-arm to use (default: next to loader)\n");
             return 0;
         }
     }
     /* Sin game.apk|game.so, apk_library busca el juego. También con NATIVE=1:
        el .so no se carga, pero la versión dice dónde están los recursos y las
        reglas. */
+    /* Con --menu y sin juego, se elige en el menú (shared/menu.c). Lo elegido
+       cuenta como si se hubiera pasado en la línea de órdenes. */
+    char **menu_argv = menu && !game ? argv : NULL; /* para volver al menú */
+    if (menu && !game) {
+        game = menu_choose_game();
+        argv = with_game(argc, argv, game);
+    }
     const char *so_path = apk_library(game);
 
-    /* La CPU ejecuta ARM, así que loader-arm lo contiene todo: juego y código
-       nativo. execv reemplaza este proceso por él, con los mismos argumentos, y
-       no vuelve. Le llega el .apk (o nada), no el .so, para que él también sepa
-       qué resources/{md5} usar. */
-    if (!LOADER_NATIVE && choose_arm_runner() == ARM_ON_CPU) {
-        log_msg("[env] game code on this CPU: handing over to loader-arm\n");
-        argv[0] = (char *)loader_arm_path();
-        execv(argv[0], argv);
-        die_errno("cannot run loader-arm");
-    }
+    /* Si la CPU ejecuta ARM, loader-arm va sin QEMU (aarch64 con 32 bits). */
+    serve_on_cpu = !LOADER_NATIVE && choose_arm_runner() == ARM_ON_CPU;
 
     /* Este proceso también necesita las reglas: call_method las consulta para
        decidir si un método va a tu versión nativa o a ARM. Sin rules.txt, las
-       de la versión, si las hay. Se buscan aquí, después del execv: en ese
-       camino las busca loader-arm. */
+       de la versión, si las hay. */
     const char *rules_path = rules_option ? rules_option : apk_rules();
     if (rules_path) rules_load(rules_path);
 
@@ -464,11 +585,13 @@ int main(int argc, char **argv) {
         if (debug) debug_start("loader.sock", debug == 2);
         exit_code = app_main();
     } else {
-        log_msg("[env] game code under QEMU, native code here, sharing the arena\n");
+        log_msg(serve_on_cpu ? "[env] game code on this CPU in loader-arm, native code here, sharing the arena\n"
+                             : "[env] game code under QEMU, native code here, sharing the arena\n");
         start_qemu(so_path, rules_path, trace, callers);
         if (debug) debug_start("loader.sock", debug == 2);
         exit_code = app_main();
         stop_qemu();
     }
+    if (menu_argv) menu_restart(menu_argv);
     return exit_code;
 }

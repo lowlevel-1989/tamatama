@@ -4,6 +4,7 @@
 #include "arm.h"
 #include "bridge.h"
 #include "debug.h"
+#include "transfer.h"
 
 /* Dónde quedó cargado el .so. */
 static uint32_t so_base;
@@ -65,15 +66,15 @@ void serve_host_requests(int until_native_done, uint32_t *regs) {
 }
 /* Las llamadas de app_main al código ARM pasan por aquí, en el PC y en la
    Raspberry Pi. Al terminar, los threads del juego tienen su turno. */
-static uint64_t call_arm(void *target, const uint32_t *words, int word_count) {
-    thread_call_begin();
+static uint64_t call_arm(const char *name, void *target, const uint32_t *words, int word_count) {
+    thread_call_begin(name);
     uint64_t result = call_words(target, words, (uint32_t)word_count);
     thread_call_end();
     return result;
 }
 /* La API compartida, versión ARM: todo está en este proceso. */
 uint64_t call_arm_at(arm_ptr target, const uint32_t *words, int word_count) {
-    return call_arm((void *)target, words, word_count);
+    return call_arm(NULL, (void *)target, words, word_count);
 }
 /* Busca el método entre los registrados con RegisterNatives, después entre los
    símbolos del .so y por último entre lo que el loader le da al .so (bionic), y
@@ -91,7 +92,7 @@ uint64_t call_arm_by_name(const char *name, const uint32_t *words, int count) {
         log_msg("[loader] %s does not exist\n", name);
         die("method not found");
     }
-    return call_arm(target, words, count);
+    return call_arm(name, target, words, count);
 }
 /* Si el símbolo tiene hook, las vtables contienen el código del hook: esa es la
    dirección que hay que devolver, para que las comparaciones con el contenido
@@ -125,6 +126,9 @@ static int load_only; /* --load-only: se detiene tras JNI_OnLoad e imprime el
 /* El cuerpo del programa: lee las reglas, carga el .so, crea la tabla JNI,
    avisa al loader, ejecuta los constructores y JNI_OnLoad, y después atiende
    órdenes o ejecuta tu programa. No vuelve. */
+/* Los argumentos con --menu, si el juego salió del menú (menu_restart). */
+static char **menu_argv;
+
 static void run(void *arg) {
     (void)arg;
     if (rules_path) rules_load(rules_path);
@@ -171,6 +175,7 @@ static void run(void *arg) {
     if (debug_mode) debug_start("loader.sock", debug_mode == 2);
     int rc = app_main();
     hooks_report();
+    if (menu_argv) menu_restart(menu_argv);
     exit(rc);
 }
 /* Punto de entrada: interpreta las opciones, reserva la arena y arranca run.
@@ -179,6 +184,7 @@ static void run(void *arg) {
    --help son las del programa. */
 int main(int argc, char **argv) {
     const char *game = NULL;
+    int menu = 0;
     /* Las opciones pueden ir en cualquier posición. El primer argumento que no
        es una opción es el juego; los demás se ignoran. */
     for (int i = 1; i < argc; i++) {
@@ -195,8 +201,13 @@ int main(int argc, char **argv) {
         else if (!strcmp(argv[i], "--load-only")) load_only = 1;
         else if (!strcmp(argv[i], "--trace")) trace = 1;
         else if (!strcmp(argv[i], "--callers")) callers_enable();
+        else if (!strcmp(argv[i], "--menu")) menu = 1;
+        else if (!strcmp(argv[i], "--transfer")) return transfer_main();
         else if (!strcmp(argv[i], "--help")) {
-            usage("loader-arm", "  --load-only    stop after JNI_OnLoad and print the report\n"
+            usage("loader-arm", "  --menu         choose the game in a menu, before loading it (ignored\n"
+                                "                 if a game is given)\n"
+                                "  --transfer     only Transfer Save: pass a save to another device\n"
+                                "  --load-only    stop after JNI_OnLoad and print the report\n"
                                 "  --trace        log every call to a hooked function\n"
                                 "  --callers      show where each Java method is called from\n"
                                 "  --debug        open the debug console (connect with tools/console.py)\n"
@@ -210,6 +221,14 @@ int main(int argc, char **argv) {
     /* Sin game.apk|game.so, apk_library busca el juego. Sin --rules, las de la
        versión. Con --serve, loader ya pasa el .so y las reglas resueltos, y la
        versión solo la necesita él. */
+    /* Con --serve, loader ya ha escrito la versión. */
+    if (!has_host) log_msg("[tamatama] version %s\n", TAMATAMA_VERSION);
+    /* Con --menu y sin juego, se elige en el menú (shared/menu.c), como en
+       loader. Android arranca siempre así. */
+    if (menu && !game && !has_host) {
+        menu_argv = argv; /* al terminar, de vuelta al menú */
+        game = menu_choose_game();
+    }
     so_path = has_host ? game : apk_library(game);
     if (!rules_path && !has_host) rules_path = apk_rules();
     if (!has_host) log_msg("[env] arm: game code on this CPU, native code in this process\n");

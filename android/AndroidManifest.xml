@@ -1,0 +1,65 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- La app de Android (make PLATFORM=android):
+     MainActivity   la pantalla de inicio: elegir la versión e importar los
+                    .apk del juego (un .zip con todos), también al abrir un
+                    .zip o un .apk con la app
+     ArenaActivity  el juego: SDL con loader-arm y la versión elegida
+     TransferActivity  Transfer Save: pasar la partida a otro dispositivo -->
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    package="com.lowlevel1989.tamatama">
+
+    <uses-feature android:glEsVersion="0x00010001" android:required="true" />
+    <uses-feature android:name="android.hardware.touchscreen" android:required="false" />
+    <uses-feature android:name="android.hardware.gamepad" android:required="false" />
+    <uses-permission android:name="android.permission.VIBRATE" />
+    <!-- Transfer Save (TransferActivity): la red local, y el bloqueo de
+         multicast para que lleguen los anuncios por broadcast -->
+    <uses-permission android:name="android.permission.INTERNET" />
+    <uses-permission android:name="android.permission.ACCESS_WIFI_STATE" />
+    <uses-permission android:name="android.permission.CHANGE_WIFI_MULTICAST_STATE" />
+
+    <application
+        android:label="@string/app_name"
+        android:icon="@mipmap/ic_launcher"
+        android:allowBackup="true"
+        android:hardwareAccelerated="true"
+        android:extractNativeLibs="true"
+        android:theme="@android:style/Theme.NoTitleBar.Fullscreen">
+
+        <activity
+            android:name=".MainActivity"
+            android:exported="true"
+            android:screenOrientation="portrait"
+            android:launchMode="singleTask"
+            android:theme="@android:style/Theme.Material.Light.NoActionBar">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+            <!-- abrir un .zip o un .apk con la app, desde un gestor de ficheros -->
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <action android:name="android.intent.action.SEND" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <data android:mimeType="application/zip" />
+                <data android:mimeType="application/x-zip-compressed" />
+                <data android:mimeType="application/vnd.android.package-archive" />
+            </intent-filter>
+        </activity>
+
+        <activity
+            android:name=".TransferActivity"
+            android:exported="false"
+            android:screenOrientation="portrait"
+            android:theme="@android:style/Theme.Material.Light.NoActionBar" />
+
+        <!-- el juego, en su propio proceso: uno nuevo por partida -->
+        <activity
+            android:name=".ArenaActivity"
+            android:process=":game"
+            android:exported="false"
+            android:screenOrientation="portrait"
+            android:configChanges="layoutDirection|locale|orientation|uiMode|screenLayout|screenSize|smallestScreenSize|keyboard|keyboardHidden|navigation"
+            android:preferMinimalPostProcessing="true" />
+    </application>
+</manifest>

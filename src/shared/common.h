@@ -49,6 +49,9 @@ extern const NativeEntry native_table[];
 #define LOADER_NATIVE 0
 #endif
 
+/* La versión de tamatama: la primera línea del log. */
+#define TAMATAMA_VERSION "0.6.0"
+
 /* La arena: una sola región de memoria con la imagen del juego, su head y su
    stack.
  * heap      lo que se pide con malloc o new: dura hasta free o delete.
@@ -163,6 +166,26 @@ const char *apk_resources(void); /* resources/{md5} del .apk en uso, con assets/
                                     dentro */
 const char *apk_rules(void);     /* rules/{md5}.txt de la versión en uso si
                                     existe, o NULL */
+/* El método nativo name con el prefijo de la versión en uso
+   (Java_..._SampleGameNatives_name). */
+const char *apk_method(const char *name);
+/* Una versión que se puede jugar, para el menú de --menu: su nombre y lo que
+   hay que pasarle a apk_library, el .apk aportado o, si solo está extraída,
+   su .so. */
+typedef struct {
+    const char *name;
+    const char *md5; /* el de apk_table.h: su carpeta en resources/ */
+    char game[512];
+} ApkChoice;
+/* Las versiones que se pueden jugar; devuelve cuántas hay. */
+int apk_choices(ApkChoice *out, int max);
+/* El menú de --menu (shared/menu.c): devuelve el juego elegido, como si se
+   hubiera pasado en la línea de órdenes. Con "Exit" termina el programa. */
+const char *menu_choose_game(void);
+/* Al terminar el juego elegido en el menú: si no se ha pedido cerrar el
+   programa (la ventana, SDL_QUIT), vuelve al menú ejecutándose otra vez con
+   argv (los argumentos de --menu). Si no puede, vuelve. */
+void menu_restart(char **argv);
 /* --help */
 void usage(const char *program, const char *options, const char *environment);
 /* --rules FILE o --rules=FILE */
